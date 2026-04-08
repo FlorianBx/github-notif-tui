@@ -4,7 +4,7 @@ mod events;
 mod gh;
 mod ui;
 
-use app::AppState;
+use app::{AppState, SortDir, SortKey, SortState};
 use chrono::Utc;
 use color_eyre::Result;
 use crossterm::{
@@ -69,7 +69,8 @@ async fn run(
                     .min(prs.len().saturating_sub(1));
                 state.tabs[idx].prs = prs;
                 state.last_refresh = Some(Utc::now());
-                spawn_fetch_all_details(&state.tabs[idx].prs, tx.clone());
+                let tab_prs = state.tabs[idx].prs.clone();
+                spawn_fetch_all_details(&tab_prs, tx.clone());
             }
 
             AppEvent::TabError(idx, err) => {
@@ -109,6 +110,7 @@ async fn run(
 
 fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSender<AppEvent>) {
     let query = state.search_query.clone();
+    let sort = state.sort.clone();
     match code {
         KeyCode::Tab | KeyCode::Char('l') => {
             state.next_tab();
@@ -119,7 +121,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            state.active_tab_state_mut().move_down(&query);
+            state.active_tab_state_mut().move_down(&query, &sort);
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('k') | KeyCode::Up => {
@@ -127,7 +129,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('G') => {
-            state.active_tab_state_mut().go_to_last(&query);
+            state.active_tab_state_mut().go_to_last(&query, &sort);
             state.pending_g = false;
             spawn_fetch_detail_if_needed(state, tx);
         }
@@ -157,6 +159,25 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
         }
         KeyCode::Char('o') | KeyCode::Enter => {
             open_in_browser(state);
+            state.pending_g = false;
+        }
+        KeyCode::Char('s') => {
+            let next = state.sort.key.next();
+            if next == SortKey::Default {
+                state.sort = SortState::default();
+            } else {
+                state.sort.key = next;
+            }
+            state.active_tab_state_mut().selected = 0;
+            state.pending_g = false;
+        }
+        KeyCode::Char('S') => {
+            state.sort.dir = if state.sort.dir == SortDir::Asc {
+                SortDir::Desc
+            } else {
+                SortDir::Asc
+            };
+            state.active_tab_state_mut().selected = 0;
             state.pending_g = false;
         }
         _ => {
@@ -230,7 +251,7 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
 fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppEvent>) {
     let tab = state.active_tab_state();
     let query = &state.search_query;
-    let Some(pr) = tab.selected_pr(query) else { return };
+    let Some(pr) = tab.selected_pr(query, &state.sort) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
     if tab.details_cache.contains_key(&pr_id) || tab.failed_details.contains(&pr_id) {
         return;
@@ -246,7 +267,7 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
 
 fn open_in_browser(state: &AppState) {
     let query = &state.search_query;
-    let Some(pr) = state.active_tab_state().selected_pr(query) else { return };
+    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort) else { return };
     let url = pr.url.clone();
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;

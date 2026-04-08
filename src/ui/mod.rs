@@ -4,7 +4,7 @@ pub mod list;
 pub mod tabs;
 pub mod theme;
 
-use crate::app::AppState;
+use crate::app::{AppState, SortDir, SortKey};
 use crate::ui::{detail::DetailPanel, list::PrList, tabs::TabsBar};
 use ratatui::{
     buffer::Buffer,
@@ -70,7 +70,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     let tab = state.active_tab_state();
     let tab_enum = crate::app::Tab::from(state.active_tab);
 
-    let visible_count = tab.visible_prs(&state.search_query).len();
+    let visible_count = tab.visible_prs(&state.search_query, &state.sort).len();
     let title = if tab.loading {
         format!(" {} — loading… ", tab_enum.label())
     } else if !state.search_query.is_empty() {
@@ -90,12 +90,14 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         tab,
         title: Box::leak(title.into_boxed_str()),
         query: &state.search_query,
+        sort: &state.sort,
     }
     .render(split[0], buf, &mut list_state);
 
     DetailPanel {
         tab,
         query: &state.search_query,
+        sort: &state.sort,
     }
     .render(split[1], buf);
 }
@@ -119,12 +121,19 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         })
         .unwrap_or_default();
 
+    let sort_info = if state.sort.key != SortKey::Default {
+        let arrow = if state.sort.dir == SortDir::Asc { "↑" } else { "↓" };
+        format!("  · sort: {} {}", state.sort.key.label(), arrow)
+    } else {
+        String::new()
+    };
+
     let text = if state.search_mode {
         " ESC cancel  Enter confirm".to_string()
     } else {
         format!(
-            " q quit  r refresh  Enter/o open  h/l tabs  j/k nav  gg/G first/last  / search{}",
-            refresh_info
+            " q quit  r refresh  Enter/o open  h/l tabs  j/k nav  gg/G first/last  / search  s sort  S dir{}{}",
+            sort_info, refresh_info
         )
     };
 

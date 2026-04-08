@@ -1,4 +1,4 @@
-use crate::app::TabState;
+use crate::app::{SortState, TabState};
 use crate::ui::theme;
 use chrono::Utc;
 use ratatui::{
@@ -33,6 +33,7 @@ pub struct PrList<'a> {
     pub tab: &'a TabState,
     pub title: &'a str,
     pub query: &'a str,
+    pub sort: &'a SortState,
 }
 
 impl StatefulWidget for PrList<'_> {
@@ -41,7 +42,7 @@ impl StatefulWidget for PrList<'_> {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut ListState) {
         let inner_width = area.width.saturating_sub(2) as usize;
 
-        let visible = self.tab.visible_prs(self.query);
+        let visible = self.tab.visible_prs(self.query, self.sort);
         let items: Vec<ListItem> = visible
             .iter()
             .enumerate()

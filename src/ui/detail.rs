@@ -1,4 +1,4 @@
-use crate::app::TabState;
+use crate::app::{SortState, TabState};
 use crate::gh::PrDetails;
 use crate::ui::{icons, theme};
 use chrono::Utc;
@@ -18,13 +18,14 @@ fn rel_age(dt: &chrono::DateTime<chrono::Utc>) -> String {
 pub struct DetailPanel<'a> {
     pub tab: &'a TabState,
     pub query: &'a str,
+    pub sort: &'a SortState,
 }
 
 impl Widget for DetailPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL).title("Detail");
 
-        let Some(pr) = self.tab.selected_pr(self.query) else {
+        let Some(pr) = self.tab.selected_pr(self.query, self.sort) else {
             Paragraph::new("No PR selected")
                 .block(block)
                 .render(area, buf);
