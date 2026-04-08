@@ -1,5 +1,5 @@
 use crate::app::{SortState, TabState};
-use crate::gh::PrDetails;
+use crate::review::{analyze_reviewers, has_active_changes, ReviewStatus};
 use crate::ui::{icons, theme};
 use chrono::Utc;
 use ratatui::{
@@ -78,13 +78,9 @@ impl Widget for DetailPanel<'_> {
 
             lines.push(Line::raw(""));
 
-            let re_requested: std::collections::HashSet<_> =
-                d.requested_reviewers.iter().collect();
-            let active_changes = d.reviews.iter()
-                .filter(|r| r.state == "CHANGES_REQUESTED")
-                .any(|r| !re_requested.contains(&r.author.login));
-
-            let has_pending = !d.requested_reviewers.is_empty();
+            let reviewers = analyze_reviewers(d, &pr.author.login);
+            let active_changes = has_active_changes(&reviewers);
+            let has_pending = reviewers.iter().any(|e| e.status == ReviewStatus::Pending);
 
             let decision_label = match d.review_decision.as_deref() {
                 Some("APPROVED") if has_pending => {
@@ -109,7 +105,7 @@ impl Widget for DetailPanel<'_> {
 
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Reviewers:", theme::header())));
-            render_reviewers_lines(d, &pr.author.login, &mut lines);
+            render_reviewers_lines(&reviewers, &mut lines);
         } else if self.tab.loading_detail {
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Loading…", theme::dim())));
@@ -126,47 +122,20 @@ impl Widget for DetailPanel<'_> {
     }
 }
 
-fn render_reviewers_lines(details: &PrDetails, pr_author: &str, lines: &mut Vec<Line>) {
-    let mut effective_state: std::collections::HashMap<String, &str> =
-        std::collections::HashMap::new();
-
-    for r in &details.reviews {
-        if r.author.login == pr_author {
-            continue;
-        }
-        match r.state.as_str() {
-            "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
-                effective_state.insert(r.author.login.clone(), r.state.as_str());
-            }
-            _ => {
-                effective_state.entry(r.author.login.clone()).or_insert(r.state.as_str());
-            }
-        }
-    }
-
-    for login in &details.requested_reviewers {
-        if login != pr_author {
-            effective_state.entry(login.clone()).or_insert("PENDING");
-        }
-    }
-
-    if effective_state.is_empty() {
+fn render_reviewers_lines(reviewers: &[crate::review::ReviewerEntry], lines: &mut Vec<Line>) {
+    if reviewers.is_empty() {
         lines.push(Line::from(Span::styled("  no reviewers", theme::dim())));
         return;
     }
-
-    let mut entries: Vec<_> = effective_state.iter().collect();
-    entries.sort_by_key(|(login, _)| login.as_str());
-
-    for (login, state) in entries {
-        let (symbol, style) = if *state == "APPROVED" {
-            (icons::CHECK, theme::ci_pass())
-        } else {
-            (icons::COMMENT, theme::dim())
+    for entry in reviewers {
+        let (symbol, style) = match entry.status {
+            ReviewStatus::Approved => (icons::CHECK, theme::ci_pass()),
+            ReviewStatus::ChangesRequested => (icons::CROSS, theme::ci_fail()),
+            ReviewStatus::Pending => (icons::COMMENT, theme::dim()),
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {} ", symbol), style),
-            Span::raw(login.clone()),
+            Span::raw(entry.login.clone()),
         ]));
     }
 }

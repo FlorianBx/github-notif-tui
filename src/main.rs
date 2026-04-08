@@ -2,6 +2,7 @@ mod app;
 mod categories;
 mod events;
 mod gh;
+mod review;
 mod ui;
 
 use app::{AppState, SortDir, SortKey, SortState};

@@ -1,4 +1,5 @@
 use crate::app::{SortState, TabState};
+use crate::review::{analyze_reviewers, approved_count, has_active_changes};
 use crate::ui::{icons, theme};
 use chrono::Utc;
 use ratatui::{
@@ -57,64 +58,24 @@ impl StatefulWidget for PrList<'_> {
                 let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
                 let (number_style, badge, badge_style) =
                     if let Some(d) = self.tab.details_cache.get(&pr_id) {
-                        let re_requested: std::collections::HashSet<_> =
-                            d.requested_reviewers.iter().collect();
+                        let reviewers = analyze_reviewers(d, &pr.author.login);
+                        let n_approved = approved_count(&reviewers);
+                        let active = has_active_changes(&reviewers);
+                        let has_pending = reviewers.iter().any(|e| {
+                            e.status == crate::review::ReviewStatus::Pending
+                        });
+                        let fully_approved = d.review_decision.as_deref() == Some("APPROVED")
+                            && !has_pending;
 
-                        let mut last_by_author: std::collections::HashMap<&str, &str> =
-                            std::collections::HashMap::new();
-                        for r in &d.reviews {
-                            if r.author.login == pr.author.login {
-                                continue;
-                            }
-                            match r.state.as_str() {
-                                "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
-                                    last_by_author.insert(&r.author.login, &r.state);
-                                }
-                                _ => {
-                                    last_by_author.entry(&r.author.login).or_insert(&r.state);
-                                }
-                            }
-                        }
-
-                        let approved_count = last_by_author.values()
-                            .filter(|&&s| s == "APPROVED")
-                            .count();
-
-                        let active_changes = last_by_author.iter()
-                            .filter(|(login, state)| {
-                                **state == "CHANGES_REQUESTED"
-                                    && !re_requested.contains(&login.to_string())
-                            })
-                            .count() > 0;
-
-                        let changes_count = last_by_author.iter()
-                            .filter(|(login, state)| {
-                                **state == "CHANGES_REQUESTED"
-                                    && !re_requested.contains(&login.to_string())
-                            })
-                            .count();
-
-                        let has_pending = !d.requested_reviewers.is_empty();
-                        let fully_approved = d.review_decision.as_deref() == Some("APPROVED") && !has_pending;
-
-                        if active_changes {
-                            (
-                                theme::ci_fail(),
-                                format!("{}{} ", changes_count, icons::CROSS),
-                                theme::ci_fail(),
-                            )
-                        } else if fully_approved || approved_count >= 2 {
-                            (
-                                theme::ci_pass(),
-                                format!("{}{} ", approved_count, icons::CHECK),
-                                theme::ci_pass(),
-                            )
-                        } else if approved_count > 0 {
-                            (
-                                theme::ci_pending(),
-                                format!("{}{} ", approved_count, icons::CHECK),
-                                theme::ci_pending(),
-                            )
+                        if active {
+                            let n_changes = reviewers.iter()
+                                .filter(|e| e.status == crate::review::ReviewStatus::ChangesRequested)
+                                .count();
+                            (theme::ci_fail(), format!("{}{} ", n_changes, icons::CROSS), theme::ci_fail())
+                        } else if fully_approved || n_approved >= 2 {
+                            (theme::ci_pass(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pass())
+                        } else if n_approved > 0 {
+                            (theme::ci_pending(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pending())
                         } else {
                             (theme::dim(), "    ".to_string(), theme::dim())
                         }
