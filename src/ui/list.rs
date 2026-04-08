@@ -62,31 +62,48 @@ impl StatefulWidget for PrList<'_> {
                             .map(|r| &r.author.login)
                             .collect::<std::collections::HashSet<_>>()
                             .len();
-                        let changes = d.reviews.iter()
-                            .filter(|r| r.state == "CHANGES_REQUESTED")
-                            .map(|r| &r.author.login)
-                            .collect::<std::collections::HashSet<_>>()
-                            .len();
-                        match d.review_decision.as_deref() {
-                            Some("APPROVED") => (
-                                theme::ci_pass(),
-                                format!("{}{} ", approved, icons::CHECK),
-                                theme::ci_pass(),
-                            ),
-                            Some("CHANGES_REQUESTED") => (
-                                theme::ci_fail(),
-                                format!("{}{} ", changes, icons::CROSS),
-                                theme::ci_fail(),
-                            ),
-                            _ if approved > 0 => (
+                        let pending = d.requested_reviewers.len();
+                        let total = approved + pending;
+
+                        let has_pending_after_changes = d.review_decision.as_deref()
+                            == Some("CHANGES_REQUESTED")
+                            && pending > 0;
+
+                        if has_pending_after_changes || (d.review_decision.is_none() && total > 0) || (d.review_decision.as_deref() == Some("REVIEW_REQUIRED")) {
+                            (
                                 theme::ci_pending(),
-                                format!("{}{} ", approved, icons::CHECK),
+                                format!("{}/{} ", approved, total),
                                 theme::ci_pending(),
-                            ),
-                            _ => (theme::dim(), "   ".to_string(), theme::dim()),
+                            )
+                        } else {
+                            match d.review_decision.as_deref() {
+                                Some("APPROVED") => (
+                                    theme::ci_pass(),
+                                    format!("{}{} ", approved, icons::CHECK),
+                                    theme::ci_pass(),
+                                ),
+                                Some("CHANGES_REQUESTED") => {
+                                    let changes = d.reviews.iter()
+                                        .filter(|r| r.state == "CHANGES_REQUESTED")
+                                        .map(|r| &r.author.login)
+                                        .collect::<std::collections::HashSet<_>>()
+                                        .len();
+                                    (
+                                        theme::ci_fail(),
+                                        format!("{}{} ", changes, icons::CROSS),
+                                        theme::ci_fail(),
+                                    )
+                                },
+                                _ if approved > 0 => (
+                                    theme::ci_pending(),
+                                    format!("{}/{} ", approved, total.max(approved)),
+                                    theme::ci_pending(),
+                                ),
+                                _ => (theme::dim(), "    ".to_string(), theme::dim()),
+                            }
                         }
                     } else {
-                        (theme::dim(), "   ".to_string(), theme::dim())
+                        (theme::dim(), "    ".to_string(), theme::dim())
                     };
 
                 let number_str = format!("#{:<5}", pr.number);
