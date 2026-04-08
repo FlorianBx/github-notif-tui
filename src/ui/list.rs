@@ -63,7 +63,7 @@ impl StatefulWidget for PrList<'_> {
                             .collect::<std::collections::HashSet<_>>()
                             .len();
                         let pending = d.requested_reviewers.len();
-                        let total = approved + pending;
+                        let _total = approved + pending;
 
                         let has_pending_after_changes = d.review_decision.as_deref()
                             == Some("CHANGES_REQUESTED")
