@@ -32,6 +32,7 @@ fn format_age(dt: &chrono::DateTime<chrono::Utc>) -> (String, Style) {
 pub struct PrList<'a> {
     pub tab: &'a TabState,
     pub title: &'a str,
+    pub query: &'a str,
 }
 
 impl StatefulWidget for PrList<'_> {
@@ -40,9 +41,8 @@ impl StatefulWidget for PrList<'_> {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut ListState) {
         let inner_width = area.width.saturating_sub(2) as usize;
 
-        let items: Vec<ListItem> = self
-            .tab
-            .prs
+        let visible = self.tab.visible_prs(self.query);
+        let items: Vec<ListItem> = visible
             .iter()
             .enumerate()
             .map(|(i, pr)| {

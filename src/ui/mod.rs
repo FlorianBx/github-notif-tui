@@ -9,7 +9,7 @@ use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
     text::{Line, Span},
-    widgets::{ListState, Paragraph, StatefulWidget, Widget},
+    widgets::{Block, Borders, ListState, Paragraph, StatefulWidget, Widget},
     Frame,
 };
 
@@ -20,18 +20,35 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
 }
 
 fn render_app(area: Rect, buf: &mut Buffer, state: &AppState) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
+    let constraints = if state.search_mode || !state.search_query.is_empty() {
+        vec![
             Constraint::Length(2),
             Constraint::Min(0),
             Constraint::Length(1),
-        ])
+            Constraint::Length(1),
+        ]
+    } else {
+        vec![
+            Constraint::Length(2),
+            Constraint::Min(0),
+            Constraint::Length(1),
+        ]
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(constraints)
         .split(area);
 
     TabsBar { state }.render(chunks[0], buf);
     render_body(chunks[1], buf, state);
-    render_footer(chunks[2], buf, state);
+
+    if state.search_mode || !state.search_query.is_empty() {
+        render_search_bar(chunks[2], buf, state);
+        render_footer(chunks[3], buf, state);
+    } else {
+        render_footer(chunks[2], buf, state);
+    }
 }
 
 fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
@@ -52,14 +69,17 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     let tab = state.active_tab_state();
     let tab_enum = crate::app::Tab::from(state.active_tab);
 
+    let visible_count = tab.visible_prs(&state.search_query).len();
     let title = if tab.loading {
         format!(" {} — loading… ", tab_enum.label())
+    } else if !state.search_query.is_empty() {
+        format!(" {} ({}/{}) ", tab_enum.label(), visible_count, tab.prs.len())
     } else {
         format!(" {} ", tab_enum.label())
     };
 
     let mut list_state = ListState::default();
-    list_state.select(if tab.prs.is_empty() {
+    list_state.select(if visible_count == 0 {
         None
     } else {
         Some(tab.selected)
@@ -68,10 +88,25 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     PrList {
         tab,
         title: Box::leak(title.into_boxed_str()),
+        query: &state.search_query,
     }
     .render(split[0], buf, &mut list_state);
 
-    DetailPanel { tab }.render(split[1], buf);
+    DetailPanel {
+        tab,
+        query: &state.search_query,
+    }
+    .render(split[1], buf);
+}
+
+fn render_search_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
+    let cursor = if state.search_mode { "█" } else { "" };
+    let text = format!("/{}{}", state.search_query, cursor);
+    Paragraph::new(Line::from(vec![
+        Span::styled(text, theme::header()),
+    ]))
+    .block(Block::default().borders(Borders::NONE))
+    .render(area, buf);
 }
 
 fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
@@ -83,10 +118,14 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         })
         .unwrap_or_default();
 
-    let text = format!(
-        " q quit  r refresh  Enter/o open  Tab/S-Tab switch  j/k navigate{}",
-        refresh_info
-    );
+    let text = if state.search_mode {
+        " ESC cancel  Enter confirm".to_string()
+    } else {
+        format!(
+            " q quit  r refresh  Enter/o open  h/l tabs  j/k nav  gg/G first/last  / search{}",
+            refresh_info
+        )
+    };
 
     Paragraph::new(Line::from(Span::styled(text, theme::dim()))).render(area, buf);
 }

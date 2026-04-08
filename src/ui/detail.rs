@@ -17,13 +17,14 @@ fn rel_age(dt: &chrono::DateTime<chrono::Utc>) -> String {
 
 pub struct DetailPanel<'a> {
     pub tab: &'a TabState,
+    pub query: &'a str,
 }
 
 impl Widget for DetailPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL).title("Detail");
 
-        let Some(pr) = self.tab.selected_pr() else {
+        let Some(pr) = self.tab.selected_pr(self.query) else {
             Paragraph::new("No PR selected")
                 .block(block)
                 .render(area, buf);

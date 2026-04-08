@@ -42,19 +42,44 @@ pub struct TabState {
 }
 
 impl TabState {
-    pub fn selected_pr(&self) -> Option<&PullRequest> {
-        self.prs.get(self.selected)
-    }
-
-    pub fn move_up(&mut self) {
-        if self.selected > 0 {
-            self.selected -= 1;
+    pub fn visible_prs<'a>(&'a self, query: &str) -> Vec<&'a PullRequest> {
+        if query.is_empty() {
+            self.prs.iter().collect()
+        } else {
+            let q = query.to_lowercase();
+            self.prs
+                .iter()
+                .filter(|pr| pr.title.to_lowercase().contains(&q))
+                .collect()
         }
     }
 
-    pub fn move_down(&mut self) {
-        if !self.prs.is_empty() && self.selected < self.prs.len() - 1 {
+    pub fn selected_pr<'a>(&'a self, query: &str) -> Option<&'a PullRequest> {
+        self.visible_prs(query).into_iter().nth(self.selected)
+    }
+
+    pub fn move_up(&mut self, query: &str) {
+        if self.selected > 0 {
+            self.selected -= 1;
+        }
+        let _ = query;
+    }
+
+    pub fn move_down(&mut self, query: &str) {
+        let count = self.visible_prs(query).len();
+        if count > 0 && self.selected < count - 1 {
             self.selected += 1;
+        }
+    }
+
+    pub fn go_to_first(&mut self) {
+        self.selected = 0;
+    }
+
+    pub fn go_to_last(&mut self, query: &str) {
+        let count = self.visible_prs(query).len();
+        if count > 0 {
+            self.selected = count - 1;
         }
     }
 }
@@ -65,6 +90,9 @@ pub struct AppState {
     pub active_tab: usize,
     pub last_refresh: Option<DateTime<Utc>>,
     pub error: Option<String>,
+    pub search_mode: bool,
+    pub search_query: String,
+    pub pending_g: bool,
 }
 
 impl Default for AppState {
@@ -79,6 +107,9 @@ impl Default for AppState {
             active_tab: 0,
             last_refresh: None,
             error: None,
+            search_mode: false,
+            search_query: String::new(),
+            pending_g: false,
         }
     }
 }
@@ -94,10 +125,12 @@ impl AppState {
 
     pub fn next_tab(&mut self) {
         self.active_tab = (self.active_tab + 1) % 4;
+        self.reset_search();
     }
 
     pub fn prev_tab(&mut self) {
         self.active_tab = (self.active_tab + 3) % 4;
+        self.reset_search();
     }
 
     pub fn tab_label(&self, idx: usize) -> String {
@@ -108,5 +141,11 @@ impl AppState {
         } else {
             tab.label().to_string()
         }
+    }
+
+    pub fn reset_search(&mut self) {
+        self.search_mode = false;
+        self.search_query.clear();
+        self.active_tab_state_mut().selected = 0;
     }
 }

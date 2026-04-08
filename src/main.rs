@@ -11,7 +11,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use events::{AppEvent, spawn_event_task};
 use std::io;
 use tokio::sync::mpsc;
@@ -47,46 +47,25 @@ async fn run(
     loop {
         terminal.draw(|f| ui::draw(f, &state))?;
 
-        let Some(event) = rx.recv().await else {
-            break;
-        };
+        let Some(event) = rx.recv().await else { break };
 
         match event {
             AppEvent::Key(key) => {
-                if events::is_quit(&key) {
-                    break;
-                }
-                match key.code {
-                    KeyCode::Tab => {
-                        state.next_tab();
-                        spawn_fetch_detail_if_needed(&state, tx.clone());
+                if state.search_mode {
+                    handle_search_key(&mut state, key.code, key.modifiers, tx.clone());
+                } else {
+                    if events::is_quit(&key) {
+                        break;
                     }
-                    KeyCode::BackTab => {
-                        state.prev_tab();
-                        spawn_fetch_detail_if_needed(&state, tx.clone());
-                    }
-                    KeyCode::Char('j') | KeyCode::Down => {
-                        state.active_tab_state_mut().move_down();
-                        spawn_fetch_detail_if_needed(&state, tx.clone());
-                    }
-                    KeyCode::Char('k') | KeyCode::Up => {
-                        state.active_tab_state_mut().move_up();
-                        spawn_fetch_detail_if_needed(&state, tx.clone());
-                    }
-                    KeyCode::Char('r') => {
-                        state.last_refresh = None;
-                        spawn_fetch_all(tx.clone());
-                    }
-                    KeyCode::Char('o') | KeyCode::Enter => {
-                        open_in_browser(&state);
-                    }
-                    _ => {}
+                    handle_normal_key(&mut state, key.code, tx.clone());
                 }
             }
 
             AppEvent::TabLoaded(idx, prs) => {
                 state.tabs[idx].loading = false;
-                state.tabs[idx].selected = state.tabs[idx].selected.min(prs.len().saturating_sub(1));
+                state.tabs[idx].selected = state.tabs[idx]
+                    .selected
+                    .min(prs.len().saturating_sub(1));
                 state.tabs[idx].prs = prs;
                 state.last_refresh = Some(Utc::now());
                 if idx == state.active_tab {
@@ -110,15 +89,89 @@ async fn run(
     Ok(())
 }
 
+fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSender<AppEvent>) {
+    let query = state.search_query.clone();
+    match code {
+        KeyCode::Tab | KeyCode::Char('l') => {
+            state.next_tab();
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::BackTab | KeyCode::Char('h') => {
+            state.prev_tab();
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            state.active_tab_state_mut().move_down(&query);
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            state.active_tab_state_mut().move_up(&query);
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Char('G') => {
+            state.active_tab_state_mut().go_to_last(&query);
+            state.pending_g = false;
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Char('g') => {
+            if state.pending_g {
+                state.active_tab_state_mut().go_to_first();
+                state.pending_g = false;
+                spawn_fetch_detail_if_needed(state, tx);
+            } else {
+                state.pending_g = true;
+            }
+        }
+        KeyCode::Char('/') => {
+            state.search_mode = true;
+            state.search_query.clear();
+            state.active_tab_state_mut().selected = 0;
+            state.pending_g = false;
+        }
+        KeyCode::Char('r') => {
+            state.last_refresh = None;
+            state.pending_g = false;
+            spawn_fetch_all(tx);
+        }
+        KeyCode::Char('o') | KeyCode::Enter => {
+            open_in_browser(state);
+            state.pending_g = false;
+        }
+        _ => {
+            state.pending_g = false;
+        }
+    }
+}
+
+fn handle_search_key(
+    state: &mut AppState,
+    code: KeyCode,
+    _modifiers: KeyModifiers,
+    tx: mpsc::UnboundedSender<AppEvent>,
+) {
+    match code {
+        KeyCode::Esc => {
+            state.reset_search();
+        }
+        KeyCode::Enter => {
+            state.search_mode = false;
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Backspace => {
+            state.search_query.pop();
+            state.active_tab_state_mut().selected = 0;
+        }
+        KeyCode::Char(c) => {
+            state.search_query.push(c);
+            state.active_tab_state_mut().selected = 0;
+        }
+        _ => {}
+    }
+}
+
 fn spawn_fetch_all(tx: mpsc::UnboundedSender<AppEvent>) {
-    for (idx, fut) in [
-        (0usize, "personal"),
-        (1, "team"),
-        (2, "mentioned"),
-        (3, "assigned"),
-    ] {
+    for (idx, label) in [(0usize, "personal"), (1, "team"), (2, "mentioned"), (3, "assigned")] {
         let tx = tx.clone();
-        let label = fut;
         tokio::spawn(async move {
             let result = match label {
                 "personal" => categories::fetch_personal().await,
@@ -136,7 +189,8 @@ fn spawn_fetch_all(tx: mpsc::UnboundedSender<AppEvent>) {
 
 fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppEvent>) {
     let tab = state.active_tab_state();
-    let Some(pr) = tab.selected_pr() else { return };
+    let query = &state.search_query;
+    let Some(pr) = tab.selected_pr(query) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
     if tab.details_cache.contains_key(&pr_id) || tab.loading_detail {
         return;
@@ -153,7 +207,8 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
 }
 
 fn open_in_browser(state: &AppState) {
-    let Some(pr) = state.active_tab_state().selected_pr() else { return };
+    let query = &state.search_query;
+    let Some(pr) = state.active_tab_state().selected_pr(query) else { return };
     let url = pr.url.clone();
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;
