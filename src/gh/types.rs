@@ -34,6 +34,7 @@ pub struct Review {
     pub state: String,
     pub author: Author,
     #[serde(rename = "submittedAt")]
+    #[allow(dead_code)]
     pub submitted_at: Option<DateTime<Utc>>,
 }
 

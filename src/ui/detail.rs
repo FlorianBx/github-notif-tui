@@ -102,20 +102,9 @@ impl Widget for DetailPanel<'_> {
                 decision_label,
             ]));
 
-            if !d.requested_reviewers.is_empty() {
-                lines.push(Line::raw(""));
-                lines.push(Line::from(Span::styled("Pending: ", theme::header())));
-                for login in &d.requested_reviewers {
-                    lines.push(Line::from(vec![
-                        Span::styled(format!("  {} ", icons::CLOCK), theme::ci_pending()),
-                        Span::raw(login.clone()),
-                    ]));
-                }
-            }
-
             lines.push(Line::raw(""));
-            lines.push(Line::from(Span::styled("Reviews:", theme::header())));
-            render_reviews_lines(d, &pr.author.login, &mut lines);
+            lines.push(Line::from(Span::styled("Reviewers:", theme::header())));
+            render_reviewers_lines(d, &pr.author.login, &mut lines);
         } else if self.tab.loading_detail {
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Loading…", theme::dim())));
@@ -132,50 +121,47 @@ impl Widget for DetailPanel<'_> {
     }
 }
 
-fn render_reviews_lines(details: &PrDetails, pr_author: &str, lines: &mut Vec<Line>) {
-    let re_requested: std::collections::HashSet<_> =
-        details.requested_reviewers.iter().collect();
-
-    let mut last_by_author: std::collections::HashMap<&str, &crate::gh::Review> =
+fn render_reviewers_lines(details: &PrDetails, pr_author: &str, lines: &mut Vec<Line>) {
+    let mut effective_state: std::collections::HashMap<String, &str> =
         std::collections::HashMap::new();
+
     for r in &details.reviews {
         if r.author.login == pr_author {
             continue;
         }
         match r.state.as_str() {
             "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
-                last_by_author.insert(r.author.login.as_str(), r);
+                effective_state.insert(r.author.login.clone(), r.state.as_str());
             }
             _ => {
-                last_by_author.entry(r.author.login.as_str()).or_insert(r);
+                effective_state.entry(r.author.login.clone()).or_insert(r.state.as_str());
             }
         }
     }
 
-    if last_by_author.is_empty() {
-        lines.push(Line::from(Span::styled("  no reviews yet", theme::dim())));
+    for login in &details.requested_reviewers {
+        if login != pr_author {
+            effective_state.entry(login.clone()).or_insert("PENDING");
+        }
+    }
+
+    if effective_state.is_empty() {
+        lines.push(Line::from(Span::styled("  no reviewers", theme::dim())));
         return;
     }
 
-    let mut entries: Vec<_> = last_by_author.values().collect();
-    entries.sort_by_key(|r| r.submitted_at);
+    let mut entries: Vec<_> = effective_state.iter().collect();
+    entries.sort_by_key(|(login, _)| login.as_str());
 
-    for review in entries {
-        let is_re_requested = re_requested.contains(&review.author.login);
-        let (symbol, style) = if is_re_requested && review.state == "CHANGES_REQUESTED" {
-            (icons::CLOCK, theme::ci_pending())
+    for (login, state) in entries {
+        let (symbol, style) = if *state == "APPROVED" {
+            (icons::CHECK, theme::ci_pass())
         } else {
-            match review.state.as_str() {
-                "APPROVED" => (icons::CHECK, theme::ci_pass()),
-                "CHANGES_REQUESTED" => (icons::CROSS, theme::ci_fail()),
-                "COMMENTED" => (icons::COMMENT, theme::dim()),
-                "DISMISSED" => (icons::SLASH, theme::dim()),
-                _ => (icons::DOT, theme::dim()),
-            }
+            (icons::COMMENT, theme::dim())
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {} ", symbol), style),
-            Span::raw(review.author.login.clone()),
+            Span::raw(login.clone()),
         ]));
     }
 }
