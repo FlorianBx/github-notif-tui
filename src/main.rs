@@ -68,9 +68,7 @@ async fn run(
                     .min(prs.len().saturating_sub(1));
                 state.tabs[idx].prs = prs;
                 state.last_refresh = Some(Utc::now());
-                if idx == state.active_tab {
-                    spawn_fetch_detail_if_needed(&state, tx.clone());
-                }
+                spawn_fetch_all_details(&state.tabs[idx].prs, tx.clone());
             }
 
             AppEvent::TabError(idx, err) => {
@@ -79,9 +77,15 @@ async fn run(
             }
 
             AppEvent::DetailLoaded(pr_id, details) => {
-                let tab = state.active_tab_state_mut();
-                tab.loading_detail = false;
-                tab.details_cache.insert(pr_id, details);
+                for tab in &mut state.tabs {
+                    if tab.prs.iter().any(|pr| {
+                        pr.repository.name_with_owner == pr_id.0 && pr.number == pr_id.1
+                    }) {
+                        tab.loading_detail = false;
+                        tab.details_cache.insert(pr_id, details);
+                        break;
+                    }
+                }
             }
         }
     }
@@ -187,18 +191,30 @@ fn spawn_fetch_all(tx: mpsc::UnboundedSender<AppEvent>) {
     }
 }
 
+fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSender<AppEvent>) {
+    for pr in prs {
+        let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+        let repo = pr.repository.name_with_owner.clone();
+        let number = pr.number;
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            if let Ok(details) = gh::fetch_pr_details(&repo, number).await {
+                let _ = tx.send(AppEvent::DetailLoaded(pr_id, details));
+            }
+        });
+    }
+}
+
 fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppEvent>) {
     let tab = state.active_tab_state();
     let query = &state.search_query;
     let Some(pr) = tab.selected_pr(query) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-    if tab.details_cache.contains_key(&pr_id) || tab.loading_detail {
+    if tab.details_cache.contains_key(&pr_id) {
         return;
     }
-
     let repo = pr.repository.name_with_owner.clone();
     let number = pr.number;
-
     tokio::spawn(async move {
         if let Ok(details) = gh::fetch_pr_details(&repo, number).await {
             let _ = tx.send(AppEvent::DetailLoaded(pr_id, details));
