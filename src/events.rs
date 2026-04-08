@@ -9,6 +9,7 @@ pub enum AppEvent {
     TabLoaded(usize, Vec<PullRequest>),
     TabError(usize, String),
     DetailLoaded(PrId, PrDetails),
+    DetailError(PrId),
 }
 
 pub fn spawn_event_task(tx: mpsc::UnboundedSender<AppEvent>) {

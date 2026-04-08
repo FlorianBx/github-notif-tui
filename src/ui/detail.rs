@@ -130,7 +130,25 @@ impl Widget for DetailPanel<'_> {
             Line::raw(""),
         ];
 
+        // Age bar — always visible
+        let (age_b, age_style) = age_bar(age_secs);
+        lines.push(Line::from(vec![
+            Span::styled("Age   ", theme::header()),
+            Span::styled(age_b, age_style),
+            Span::styled(format!("  {}", rel_age(&pr.created_at)), age_style),
+        ]));
+
+        // Comments — always visible
+        let comment_str = if pr.comments_count == 0 {
+            "💬 no comments".to_string()
+        } else {
+            format!("💬 {} comment{}", pr.comments_count, if pr.comments_count > 1 { "s" } else { "" })
+        };
+        lines.push(Line::from(Span::styled(comment_str, theme::dim())));
+
         if let Some(d) = details {
+            lines.push(Line::raw(""));
+
             // Decision + merge state badges
             let mut badge_spans = decision_spans(d.review_decision.as_deref());
             badge_spans.extend(mergeable_spans(d.mergeable_state.as_deref()));
@@ -166,13 +184,9 @@ impl Widget for DetailPanel<'_> {
             lines.push(Line::from(vec![
                 Span::styled("Reviews  ", theme::header()),
                 Span::styled(review_bar, bar_style),
-                Span::styled(
-                    format!("  {} / {}", approved_count, total_reviewers),
-                    theme::dim(),
-                ),
+                Span::styled(format!("  {} / {}", approved_count, total_reviewers), theme::dim()),
             ]));
 
-            // Reviewer list
             for login in &d.requested_reviewers {
                 let (symbol, label, style) = match last_review_for(login, &d.reviews) {
                     Some(r) if r.state == "APPROVED" => {
@@ -200,14 +214,6 @@ impl Widget for DetailPanel<'_> {
 
             lines.push(Line::raw(""));
 
-            // Age bar
-            let (age_b, age_style) = age_bar(age_secs);
-            lines.push(Line::from(vec![
-                Span::styled("Age   ", theme::header()),
-                Span::styled(age_b, age_style),
-                Span::styled(format!("  {}", rel_age(&pr.created_at)), age_style),
-            ]));
-
             // Size bar
             let total_lines = d.additions + d.deletions;
             let (size_b, size_style) = size_bar(total_lines);
@@ -216,25 +222,12 @@ impl Widget for DetailPanel<'_> {
                 Span::styled(size_b, size_style),
                 Span::styled(format!("  +{} / -{}", d.additions, d.deletions), size_style),
             ]));
-
+        } else if self.tab.failed_details.contains(&pr_id) {
             lines.push(Line::raw(""));
-
-            // Comments
-            let comment_str = if pr.comments_count == 0 {
-                "💬 no comments".to_string()
-            } else {
-                format!("💬 {} comment{}", pr.comments_count, if pr.comments_count > 1 { "s" } else { "" })
-            };
-            lines.push(Line::from(Span::styled(comment_str, theme::dim())));
-        } else if self.tab.loading_detail {
-            let (age_b, age_style) = age_bar(age_secs);
-            lines.push(Line::from(vec![
-                Span::styled("Age   ", theme::header()),
-                Span::styled(age_b, age_style),
-                Span::styled(format!("  {}", rel_age(&pr.created_at)), age_style),
-            ]));
+            lines.push(Line::from(Span::styled("⚠ details unavailable  (r to retry)", theme::ci_pending())));
+        } else {
             lines.push(Line::raw(""));
-            lines.push(Line::from(Span::styled("Loading…", theme::dim())));
+            lines.push(Line::from(Span::styled("Loading details…", theme::dim())));
         }
 
         Paragraph::new(lines)

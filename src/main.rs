@@ -83,7 +83,20 @@ async fn run(
                         pr.repository.name_with_owner == pr_id.0 && pr.number == pr_id.1
                     }) {
                         tab.loading_detail = false;
+                        tab.failed_details.remove(&pr_id);
                         tab.details_cache.insert(pr_id, details);
+                        break;
+                    }
+                }
+            }
+
+            AppEvent::DetailError(pr_id) => {
+                for tab in &mut state.tabs {
+                    if tab.prs.iter().any(|pr| {
+                        pr.repository.name_with_owner == pr_id.0 && pr.number == pr_id.1
+                    }) {
+                        tab.loading_detail = false;
+                        tab.failed_details.insert(pr_id);
                         break;
                     }
                 }
@@ -136,6 +149,10 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
         KeyCode::Char('r') => {
             state.last_refresh = None;
             state.pending_g = false;
+            for tab in &mut state.tabs {
+                tab.details_cache.clear();
+                tab.failed_details.clear();
+            }
             spawn_fetch_all(tx);
         }
         KeyCode::Char('o') | KeyCode::Enter => {
@@ -202,8 +219,9 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
         let sem = sem.clone();
         tokio::spawn(async move {
             let _permit = sem.acquire_owned().await.unwrap();
-            if let Ok(details) = gh::fetch_pr_details(&repo, number).await {
-                let _ = tx.send(AppEvent::DetailLoaded(pr_id, details));
+            match gh::fetch_pr_details(&repo, number).await {
+                Ok(details) => { let _ = tx.send(AppEvent::DetailLoaded(pr_id, details)); }
+                Err(_) => { let _ = tx.send(AppEvent::DetailError(pr_id)); }
             }
         });
     }
@@ -214,7 +232,7 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
     let query = &state.search_query;
     let Some(pr) = tab.selected_pr(query) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-    if tab.details_cache.contains_key(&pr_id) {
+    if tab.details_cache.contains_key(&pr_id) || tab.failed_details.contains(&pr_id) {
         return;
     }
     let repo = pr.repository.name_with_owner.clone();

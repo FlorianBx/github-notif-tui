@@ -37,6 +37,7 @@ pub struct TabState {
     pub prs: Vec<PullRequest>,
     pub selected: usize,
     pub details_cache: HashMap<PrId, PrDetails>,
+    pub failed_details: std::collections::HashSet<PrId>,
     pub loading: bool,
     pub loading_detail: bool,
 }
