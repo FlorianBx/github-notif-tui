@@ -85,8 +85,7 @@ async fn run(
                     }) {
                         tab.loading_detail = false;
                         tab.failed_details.remove(&pr_id);
-                        tab.details_cache.insert(pr_id, details);
-                        break;
+                        tab.details_cache.insert(pr_id.clone(), details.clone());
                     }
                 }
             }
@@ -97,8 +96,7 @@ async fn run(
                         pr.repository.name_with_owner == pr_id.0 && pr.number == pr_id.1
                     }) {
                         tab.loading_detail = false;
-                        tab.failed_details.insert(pr_id);
-                        break;
+                        tab.failed_details.insert(pr_id.clone());
                     }
                 }
             }
