@@ -49,35 +49,11 @@ pub async fn fetch_pr_details(repo: &str, number: u64) -> Result<PrDetails> {
     let review_decision = pr_data["review_decision"]
         .as_str()
         .map(|s| s.to_uppercase());
-    let mergeable_state = pr_data["mergeable_state"]
-        .as_str()
-        .map(|s| s.to_lowercase());
-
-    let requested_reviewers = pr_data["requested_reviewers"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|r| r["login"].as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    let requested_teams = pr_data["requested_teams"]
-        .as_array()
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|t| t["name"].as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default();
 
     Ok(PrDetails {
         reviews,
         additions,
         deletions,
         review_decision,
-        requested_reviewers,
-        requested_teams,
-        mergeable_state,
     })
 }

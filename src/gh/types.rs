@@ -10,7 +10,9 @@ pub struct PullRequest {
     pub repository: Repository,
     #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
-#[serde(rename = "isDraft", default)]
+    #[serde(rename = "updatedAt")]
+    pub updated_at: DateTime<Utc>,
+    #[serde(rename = "isDraft", default)]
     pub is_draft: bool,
     #[serde(rename = "commentsCount", default)]
     pub comments_count: u32,
@@ -41,9 +43,6 @@ pub struct PrDetails {
     pub additions: u32,
     pub deletions: u32,
     pub review_decision: Option<String>,
-    pub requested_reviewers: Vec<String>,
-    pub requested_teams: Vec<String>,
-    pub mergeable_state: Option<String>,
 }
 
 pub type PrId = (String, u64);

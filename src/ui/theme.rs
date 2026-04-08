@@ -43,6 +43,13 @@ pub fn age_fresh() -> Style {
     Style::default().fg(Color::Green)
 }
 
+pub fn additions() -> Style {
+    Style::default().fg(Color::Green)
+}
+
+pub fn deletions() -> Style {
+    Style::default().fg(Color::Red)
+}
 
 pub fn error() -> Style {
     Style::default()
