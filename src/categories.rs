@@ -23,3 +23,7 @@ pub async fn fetch_mentioned() -> Result<Vec<PullRequest>> {
 pub async fn fetch_assigned() -> Result<Vec<PullRequest>> {
     gh::search_prs("assignee:@me").await
 }
+
+pub async fn fetch_mine() -> Result<Vec<PullRequest>> {
+    gh::search_prs("author:@me").await
+}

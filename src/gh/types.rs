@@ -43,6 +43,7 @@ pub struct PrDetails {
     pub additions: u32,
     pub deletions: u32,
     pub review_decision: Option<String>,
+    pub requested_reviewers: Vec<String>,
 }
 
 pub type PrId = (String, u64);

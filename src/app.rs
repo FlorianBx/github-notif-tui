@@ -50,6 +50,7 @@ pub enum Tab {
     Team = 1,
     Mentioned = 2,
     Assigned = 3,
+    Mine = 4,
 }
 
 impl Tab {
@@ -59,17 +60,19 @@ impl Tab {
             Tab::Team => "Team",
             Tab::Mentioned => "Mentioned",
             Tab::Assigned => "Assigned",
+            Tab::Mine => "Mine",
         }
     }
 }
 
 impl From<usize> for Tab {
     fn from(i: usize) -> Self {
-        match i % 4 {
+        match i % 5 {
             0 => Tab::Personal,
             1 => Tab::Team,
             2 => Tab::Mentioned,
-            _ => Tab::Assigned,
+            3 => Tab::Assigned,
+            _ => Tab::Mine,
         }
     }
 }
@@ -160,7 +163,7 @@ impl TabState {
 
 #[derive(Debug)]
 pub struct AppState {
-    pub tabs: [TabState; 4],
+    pub tabs: [TabState; 5],
     pub active_tab: usize,
     pub last_refresh: Option<DateTime<Utc>>,
     pub error: Option<String>,
@@ -174,6 +177,7 @@ impl Default for AppState {
     fn default() -> Self {
         Self {
             tabs: [
+                TabState { loading: true, ..Default::default() },
                 TabState { loading: true, ..Default::default() },
                 TabState { loading: true, ..Default::default() },
                 TabState { loading: true, ..Default::default() },
@@ -200,12 +204,12 @@ impl AppState {
     }
 
     pub fn next_tab(&mut self) {
-        self.active_tab = (self.active_tab + 1) % 4;
+        self.active_tab = (self.active_tab + 1) % 5;
         self.reset_search();
     }
 
     pub fn prev_tab(&mut self) {
-        self.active_tab = (self.active_tab + 3) % 4;
+        self.active_tab = (self.active_tab + 4) % 5;
         self.reset_search();
     }
 

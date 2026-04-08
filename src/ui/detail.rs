@@ -93,6 +93,17 @@ impl Widget for DetailPanel<'_> {
                 decision_label,
             ]));
 
+            if !d.requested_reviewers.is_empty() {
+                lines.push(Line::raw(""));
+                lines.push(Line::from(Span::styled("Pending: ", theme::header())));
+                for login in &d.requested_reviewers {
+                    lines.push(Line::from(vec![
+                        Span::styled(format!("  {} ", icons::CLOCK), theme::ci_pending()),
+                        Span::raw(login.clone()),
+                    ]));
+                }
+            }
+
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Reviews:", theme::header())));
             render_reviews_lines(d, &mut lines);

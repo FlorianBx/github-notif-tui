@@ -213,13 +213,14 @@ fn handle_search_key(
 }
 
 fn spawn_fetch_all(tx: mpsc::UnboundedSender<AppEvent>) {
-    for (idx, label) in [(0usize, "personal"), (1, "team"), (2, "mentioned"), (3, "assigned")] {
+    for (idx, label) in [(0usize, "personal"), (1, "team"), (2, "mentioned"), (3, "assigned"), (4, "mine")] {
         let tx = tx.clone();
         tokio::spawn(async move {
             let result = match label {
                 "personal" => categories::fetch_personal().await,
                 "team" => categories::fetch_team().await,
                 "mentioned" => categories::fetch_mentioned().await,
+                "mine" => categories::fetch_mine().await,
                 _ => categories::fetch_assigned().await,
             };
             match result {

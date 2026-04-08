@@ -13,7 +13,7 @@ pub struct TabsBar<'a> {
 
 impl Widget for TabsBar<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let titles: Vec<Line> = (0..4)
+        let titles: Vec<Line> = (0..5)
             .map(|i| {
                 let label = self.state.tab_label(i);
                 if i == self.state.active_tab {
