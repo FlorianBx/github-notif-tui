@@ -69,39 +69,32 @@ impl StatefulWidget for PrList<'_> {
                             == Some("CHANGES_REQUESTED")
                             && pending > 0;
 
-                        if has_pending_after_changes || (d.review_decision.is_none() && total > 0) || (d.review_decision.as_deref() == Some("REVIEW_REQUIRED")) {
-                            (
-                                theme::ci_pending(),
-                                format!("{}{} ", approved, icons::CHECK),
-                                theme::ci_pending(),
-                            )
+                        let number_style = match d.review_decision.as_deref() {
+                            Some("APPROVED") => theme::ci_pass(),
+                            Some("CHANGES_REQUESTED") => theme::ci_fail(),
+                            _ if approved > 0 => theme::ci_pending(),
+                            _ => theme::dim(),
+                        };
+
+                        let (badge, badge_style) = if has_pending_after_changes {
+                            (format!("{}{} ", approved, icons::CHECK), theme::ci_pending())
                         } else {
                             match d.review_decision.as_deref() {
-                                Some("APPROVED") => (
-                                    theme::ci_pass(),
-                                    format!("{}{} ", approved, icons::CHECK),
-                                    theme::ci_pass(),
-                                ),
+                                Some("APPROVED") => (format!("{}{} ", approved, icons::CHECK), theme::ci_pass()),
                                 Some("CHANGES_REQUESTED") => {
                                     let changes = d.reviews.iter()
                                         .filter(|r| r.state == "CHANGES_REQUESTED")
                                         .map(|r| &r.author.login)
                                         .collect::<std::collections::HashSet<_>>()
                                         .len();
-                                    (
-                                        theme::ci_fail(),
-                                        format!("{}{} ", changes, icons::CROSS),
-                                        theme::ci_fail(),
-                                    )
+                                    (format!("{}{} ", changes, icons::CROSS), theme::ci_fail())
                                 },
-                                _ if approved > 0 => (
-                                    theme::ci_pending(),
-                                    format!("{}{} ", approved, icons::CHECK),
-                                    theme::ci_pending(),
-                                ),
-                                _ => (theme::dim(), "    ".to_string(), theme::dim()),
+                                _ if approved > 0 => (format!("{}{} ", approved, icons::CHECK), theme::ci_pending()),
+                                _ => ("    ".to_string(), theme::dim()),
                             }
-                        }
+                        };
+
+                        (number_style, badge, badge_style)
                     } else {
                         (theme::dim(), "    ".to_string(), theme::dim())
                     };
