@@ -115,7 +115,7 @@ impl Widget for DetailPanel<'_> {
 
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Reviews:", theme::header())));
-            render_reviews_lines(d, &mut lines);
+            render_reviews_lines(d, &pr.author.login, &mut lines);
         } else if self.tab.loading_detail {
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Loading…", theme::dim())));
@@ -132,19 +132,29 @@ impl Widget for DetailPanel<'_> {
     }
 }
 
-fn render_reviews_lines(details: &PrDetails, lines: &mut Vec<Line>) {
-    if details.reviews.is_empty() {
-        lines.push(Line::from(Span::styled("  no reviews yet", theme::dim())));
-        return;
-    }
-
+fn render_reviews_lines(details: &PrDetails, pr_author: &str, lines: &mut Vec<Line>) {
     let re_requested: std::collections::HashSet<_> =
         details.requested_reviewers.iter().collect();
 
     let mut last_by_author: std::collections::HashMap<&str, &crate::gh::Review> =
         std::collections::HashMap::new();
     for r in &details.reviews {
-        last_by_author.insert(r.author.login.as_str(), r);
+        if r.author.login == pr_author {
+            continue;
+        }
+        match r.state.as_str() {
+            "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
+                last_by_author.insert(r.author.login.as_str(), r);
+            }
+            _ => {
+                last_by_author.entry(r.author.login.as_str()).or_insert(r);
+            }
+        }
+    }
+
+    if last_by_author.is_empty() {
+        lines.push(Line::from(Span::styled("  no reviews yet", theme::dim())));
+        return;
     }
 
     let mut entries: Vec<_> = last_by_author.values().collect();

@@ -60,22 +60,39 @@ impl StatefulWidget for PrList<'_> {
                         let re_requested: std::collections::HashSet<_> =
                             d.requested_reviewers.iter().collect();
 
-                        let approved_count = d.reviews.iter()
-                            .filter(|r| r.state == "APPROVED")
-                            .map(|r| &r.author.login)
-                            .collect::<std::collections::HashSet<_>>()
-                            .len();
+                        let mut last_by_author: std::collections::HashMap<&str, &str> =
+                            std::collections::HashMap::new();
+                        for r in &d.reviews {
+                            if r.author.login == pr.author.login {
+                                continue;
+                            }
+                            match r.state.as_str() {
+                                "APPROVED" | "CHANGES_REQUESTED" | "DISMISSED" => {
+                                    last_by_author.insert(&r.author.login, &r.state);
+                                }
+                                _ => {
+                                    last_by_author.entry(&r.author.login).or_insert(&r.state);
+                                }
+                            }
+                        }
 
-                        let active_changes = d.reviews.iter()
-                            .filter(|r| r.state == "CHANGES_REQUESTED")
-                            .any(|r| !re_requested.contains(&r.author.login));
+                        let approved_count = last_by_author.values()
+                            .filter(|&&s| s == "APPROVED")
+                            .count();
 
-                        let changes_count = d.reviews.iter()
-                            .filter(|r| r.state == "CHANGES_REQUESTED"
-                                && !re_requested.contains(&r.author.login))
-                            .map(|r| &r.author.login)
-                            .collect::<std::collections::HashSet<_>>()
-                            .len();
+                        let active_changes = last_by_author.iter()
+                            .filter(|(login, state)| {
+                                **state == "CHANGES_REQUESTED"
+                                    && !re_requested.contains(&login.to_string())
+                            })
+                            .count() > 0;
+
+                        let changes_count = last_by_author.iter()
+                            .filter(|(login, state)| {
+                                **state == "CHANGES_REQUESTED"
+                                    && !re_requested.contains(&login.to_string())
+                            })
+                            .count();
 
                         if active_changes {
                             (
