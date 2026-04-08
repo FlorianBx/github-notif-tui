@@ -1,5 +1,5 @@
 use crate::app::{SortState, TabState};
-use crate::ui::theme;
+use crate::ui::{icons, theme};
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
@@ -54,8 +54,43 @@ impl StatefulWidget for PrList<'_> {
                 let age_col = format!(" {}", age);
                 let age_col_len = age_col.chars().count();
 
-                let number_str = format!("#{:<5} ", pr.number);
-                let number_len = number_str.chars().count();
+                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                let (number_style, badge, badge_style) =
+                    if let Some(d) = self.tab.details_cache.get(&pr_id) {
+                        let approved = d.reviews.iter()
+                            .filter(|r| r.state == "APPROVED")
+                            .map(|r| &r.author.login)
+                            .collect::<std::collections::HashSet<_>>()
+                            .len();
+                        let changes = d.reviews.iter()
+                            .filter(|r| r.state == "CHANGES_REQUESTED")
+                            .map(|r| &r.author.login)
+                            .collect::<std::collections::HashSet<_>>()
+                            .len();
+                        match d.review_decision.as_deref() {
+                            Some("APPROVED") => (
+                                theme::ci_pass(),
+                                format!("{}{} ", approved, icons::CHECK),
+                                theme::ci_pass(),
+                            ),
+                            Some("CHANGES_REQUESTED") => (
+                                theme::ci_fail(),
+                                format!("{}{} ", changes, icons::CROSS),
+                                theme::ci_fail(),
+                            ),
+                            _ if approved > 0 => (
+                                theme::ci_pending(),
+                                format!("{}{} ", approved, icons::CHECK),
+                                theme::ci_pending(),
+                            ),
+                            _ => (theme::dim(), "   ".to_string(), theme::dim()),
+                        }
+                    } else {
+                        (theme::dim(), "   ".to_string(), theme::dim())
+                    };
+
+                let number_str = format!("#{:<5}", pr.number);
+                let number_len = number_str.chars().count() + badge.chars().count() + 1;
 
                 let title_width = inner_width
                     .saturating_sub(number_len)
@@ -73,7 +108,9 @@ impl StatefulWidget for PrList<'_> {
                 };
 
                 let spans = vec![
-                    Span::styled(number_str, theme::dim()),
+                    Span::styled(number_str, number_style),
+                    Span::raw(" "),
+                    Span::styled(badge, badge_style),
                     Span::styled(title_padded, row_style),
                     Span::styled(draft.to_string(), theme::dim()),
                     Span::styled(age_col, age_style),
