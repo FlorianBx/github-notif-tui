@@ -94,13 +94,16 @@ impl StatefulWidget for PrList<'_> {
                             })
                             .count();
 
+                        let has_pending = !d.requested_reviewers.is_empty();
+                        let fully_approved = d.review_decision.as_deref() == Some("APPROVED") && !has_pending;
+
                         if active_changes {
                             (
                                 theme::ci_fail(),
                                 format!("{}{} ", changes_count, icons::CROSS),
                                 theme::ci_fail(),
                             )
-                        } else if approved_count >= 2 || d.review_decision.as_deref() == Some("APPROVED") {
+                        } else if fully_approved || approved_count >= 2 {
                             (
                                 theme::ci_pass(),
                                 format!("{}{} ", approved_count, icons::CHECK),

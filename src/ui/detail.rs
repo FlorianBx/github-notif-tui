@@ -84,7 +84,12 @@ impl Widget for DetailPanel<'_> {
                 .filter(|r| r.state == "CHANGES_REQUESTED")
                 .any(|r| !re_requested.contains(&r.author.login));
 
+            let has_pending = !d.requested_reviewers.is_empty();
+
             let decision_label = match d.review_decision.as_deref() {
+                Some("APPROVED") if has_pending => {
+                    Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending())
+                }
                 Some("APPROVED") => Span::styled(format!("{} Approved", icons::CHECK), theme::ci_pass()),
                 Some("CHANGES_REQUESTED") if !active_changes => {
                     Span::styled(format!("{} Re-review requested", icons::CLOCK), theme::ci_pending())
