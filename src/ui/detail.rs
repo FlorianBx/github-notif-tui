@@ -1,6 +1,6 @@
 use crate::app::TabState;
 use crate::gh::PrDetails;
-use crate::ui::theme;
+use crate::ui::{icons, theme};
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
@@ -78,13 +78,13 @@ impl Widget for DetailPanel<'_> {
             lines.push(Line::raw(""));
 
             let decision_label = match d.review_decision.as_deref() {
-                Some("APPROVED") => Span::styled("✓ Approved", theme::ci_pass()),
+                Some("APPROVED") => Span::styled(format!("{} Approved", icons::CHECK), theme::ci_pass()),
                 Some("CHANGES_REQUESTED") => {
-                    Span::styled("✗ Changes requested", theme::ci_fail())
+                    Span::styled(format!("{} Changes requested", icons::CROSS), theme::ci_fail())
                 }
-                Some("REVIEW_REQUIRED") => Span::styled("⧗ Review required", theme::ci_pending()),
+                Some("REVIEW_REQUIRED") => Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending()),
                 Some(other) => Span::styled(other.to_string(), theme::dim()),
-                None => Span::styled("—", theme::dim()),
+                None => Span::styled(icons::DASH, theme::dim()),
             };
             lines.push(Line::from(vec![
                 Span::styled("Decision:", theme::header()),
@@ -101,7 +101,7 @@ impl Widget for DetailPanel<'_> {
         }
 
         if pr.is_draft {
-            lines.push(Line::from(Span::styled("[DRAFT]", theme::ci_pending())));
+            lines.push(Line::from(Span::styled(icons::DRAFT, theme::ci_pending())));
         }
 
         Paragraph::new(lines)
@@ -128,11 +128,11 @@ fn render_reviews_lines(details: &PrDetails, lines: &mut Vec<Line>) {
 
     for review in entries {
         let (symbol, style) = match review.state.as_str() {
-            "APPROVED" => ("✓", theme::ci_pass()),
-            "CHANGES_REQUESTED" => ("✗", theme::ci_fail()),
-            "COMMENTED" => ("💬", theme::dim()),
-            "DISMISSED" => ("⊘", theme::dim()),
-            _ => ("·", theme::dim()),
+            "APPROVED" => (icons::CHECK, theme::ci_pass()),
+            "CHANGES_REQUESTED" => (icons::CROSS, theme::ci_fail()),
+            "COMMENTED" => (icons::COMMENT, theme::dim()),
+            "DISMISSED" => (icons::SLASH, theme::dim()),
+            _ => (icons::DOT, theme::dim()),
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {} ", symbol), style),

@@ -1,4 +1,5 @@
 pub mod detail;
+pub mod icons;
 pub mod list;
 pub mod tabs;
 pub mod theme;
