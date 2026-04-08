@@ -25,5 +25,5 @@ pub async fn fetch_assigned() -> Result<Vec<PullRequest>> {
 }
 
 pub async fn fetch_mine() -> Result<Vec<PullRequest>> {
-    gh::search_prs("author:@me").await
+    gh::search_authored_prs().await
 }

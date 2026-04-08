@@ -31,6 +31,19 @@ pub async fn search_prs(query: &str) -> Result<Vec<PullRequest>> {
     Ok(serde_json::from_str(&json)?)
 }
 
+pub async fn search_authored_prs() -> Result<Vec<PullRequest>> {
+    let json = run_gh(&[
+        "search",
+        "prs",
+        "--state=open",
+        "--limit=100",
+        "--author=@me",
+        &format!("--json={PR_FIELDS}"),
+    ])
+    .await?;
+    Ok(serde_json::from_str(&json)?)
+}
+
 pub async fn fetch_pr_details(repo: &str, number: u64) -> Result<PrDetails> {
     let number_str = number.to_string();
     let json = run_gh(&[
