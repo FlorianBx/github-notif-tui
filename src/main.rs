@@ -77,7 +77,7 @@ async fn run(
                         state.last_refresh = None;
                         spawn_fetch_all(tx.clone());
                     }
-                    KeyCode::Char('o') => {
+                    KeyCode::Char('o') | KeyCode::Enter => {
                         open_in_browser(&state);
                     }
                     _ => {}

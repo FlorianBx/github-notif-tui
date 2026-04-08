@@ -84,7 +84,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         .unwrap_or_default();
 
     let text = format!(
-        " q quit  r refresh  o open  Tab/S-Tab switch  j/k navigate{}",
+        " q quit  r refresh  Enter/o open  Tab/S-Tab switch  j/k navigate{}",
         refresh_info
     );
 
