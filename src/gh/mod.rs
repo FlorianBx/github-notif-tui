@@ -32,28 +32,19 @@ pub async fn search_prs(query: &str) -> Result<Vec<PullRequest>> {
 }
 
 pub async fn fetch_pr_details(repo: &str, number: u64) -> Result<PrDetails> {
-    let reviews_path = format!("repos/{repo}/pulls/{number}/reviews");
-    let pr_path = format!("repos/{repo}/pulls/{number}");
-    let reviews_args: Vec<&str> = vec!["api", &reviews_path];
-    let pr_args: Vec<&str> = vec!["api", &pr_path];
-    let (reviews_json, pr_json) = tokio::join!(
-        run_gh(&reviews_args),
-        run_gh(&pr_args),
-    );
+    let number_str = number.to_string();
+    let json = run_gh(&[
+        "pr", "view", &number_str,
+        "--repo", repo,
+        "--json", "additions,deletions,reviewDecision,reviews",
+    ]).await?;
 
-    let reviews: Vec<Review> = serde_json::from_str(&reviews_json?)?;
-    let pr_data: serde_json::Value = serde_json::from_str(&pr_json?)?;
+    let data: serde_json::Value = serde_json::from_str(&json)?;
 
-    let additions = pr_data["additions"].as_u64().unwrap_or(0) as u32;
-    let deletions = pr_data["deletions"].as_u64().unwrap_or(0) as u32;
-    let review_decision = pr_data["review_decision"]
-        .as_str()
-        .map(|s| s.to_uppercase());
+    let additions = data["additions"].as_u64().unwrap_or(0) as u32;
+    let deletions = data["deletions"].as_u64().unwrap_or(0) as u32;
+    let review_decision = data["reviewDecision"].as_str().map(|s| s.to_uppercase());
+    let reviews: Vec<Review> = serde_json::from_value(data["reviews"].clone()).unwrap_or_default();
 
-    Ok(PrDetails {
-        reviews,
-        additions,
-        deletions,
-        review_decision,
-    })
+    Ok(PrDetails { reviews, additions, deletions, review_decision })
 }
