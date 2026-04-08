@@ -14,7 +14,8 @@ use crossterm::{
 use crossterm::event::{KeyCode, KeyModifiers};
 use events::{AppEvent, spawn_event_task};
 use std::io;
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, Semaphore};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -192,12 +193,15 @@ fn spawn_fetch_all(tx: mpsc::UnboundedSender<AppEvent>) {
 }
 
 fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSender<AppEvent>) {
+    let sem = Arc::new(Semaphore::new(25));
     for pr in prs {
         let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
         let repo = pr.repository.name_with_owner.clone();
         let number = pr.number;
         let tx = tx.clone();
+        let sem = sem.clone();
         tokio::spawn(async move {
+            let _permit = sem.acquire_owned().await.unwrap();
             if let Ok(details) = gh::fetch_pr_details(&repo, number).await {
                 let _ = tx.send(AppEvent::DetailLoaded(pr_id, details));
             }
