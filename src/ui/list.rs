@@ -72,7 +72,7 @@ impl StatefulWidget for PrList<'_> {
                         if has_pending_after_changes || (d.review_decision.is_none() && total > 0) || (d.review_decision.as_deref() == Some("REVIEW_REQUIRED")) {
                             (
                                 theme::ci_pending(),
-                                format!("{}/{} ", approved, total),
+                                format!("{}{} ", approved, icons::CHECK),
                                 theme::ci_pending(),
                             )
                         } else {
@@ -96,7 +96,7 @@ impl StatefulWidget for PrList<'_> {
                                 },
                                 _ if approved > 0 => (
                                     theme::ci_pending(),
-                                    format!("{}/{} ", approved, total.max(approved)),
+                                    format!("{}{} ", approved, icons::CHECK),
                                     theme::ci_pending(),
                                 ),
                                 _ => (theme::dim(), "    ".to_string(), theme::dim()),
