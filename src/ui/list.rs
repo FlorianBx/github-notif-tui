@@ -57,44 +57,47 @@ impl StatefulWidget for PrList<'_> {
                 let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
                 let (number_style, badge, badge_style) =
                     if let Some(d) = self.tab.details_cache.get(&pr_id) {
-                        let approved = d.reviews.iter()
+                        let re_requested: std::collections::HashSet<_> =
+                            d.requested_reviewers.iter().collect();
+
+                        let approved_count = d.reviews.iter()
                             .filter(|r| r.state == "APPROVED")
                             .map(|r| &r.author.login)
                             .collect::<std::collections::HashSet<_>>()
                             .len();
-                        let pending = d.requested_reviewers.len();
-                        let _total = approved + pending;
 
-                        let has_pending_after_changes = d.review_decision.as_deref()
-                            == Some("CHANGES_REQUESTED")
-                            && pending > 0;
+                        let active_changes = d.reviews.iter()
+                            .filter(|r| r.state == "CHANGES_REQUESTED")
+                            .any(|r| !re_requested.contains(&r.author.login));
 
-                        let number_style = match d.review_decision.as_deref() {
-                            Some("APPROVED") => theme::ci_pass(),
-                            Some("CHANGES_REQUESTED") => theme::ci_fail(),
-                            _ if approved > 0 => theme::ci_pending(),
-                            _ => theme::dim(),
-                        };
+                        let changes_count = d.reviews.iter()
+                            .filter(|r| r.state == "CHANGES_REQUESTED"
+                                && !re_requested.contains(&r.author.login))
+                            .map(|r| &r.author.login)
+                            .collect::<std::collections::HashSet<_>>()
+                            .len();
 
-                        let (badge, badge_style) = if has_pending_after_changes {
-                            (format!("{}{} ", approved, icons::CHECK), theme::ci_pending())
+                        if active_changes {
+                            (
+                                theme::ci_fail(),
+                                format!("{}{} ", changes_count, icons::CROSS),
+                                theme::ci_fail(),
+                            )
+                        } else if approved_count >= 2 || d.review_decision.as_deref() == Some("APPROVED") {
+                            (
+                                theme::ci_pass(),
+                                format!("{}{} ", approved_count, icons::CHECK),
+                                theme::ci_pass(),
+                            )
+                        } else if approved_count > 0 {
+                            (
+                                theme::ci_pending(),
+                                format!("{}{} ", approved_count, icons::CHECK),
+                                theme::ci_pending(),
+                            )
                         } else {
-                            match d.review_decision.as_deref() {
-                                Some("APPROVED") => (format!("{}{} ", approved, icons::CHECK), theme::ci_pass()),
-                                Some("CHANGES_REQUESTED") => {
-                                    let changes = d.reviews.iter()
-                                        .filter(|r| r.state == "CHANGES_REQUESTED")
-                                        .map(|r| &r.author.login)
-                                        .collect::<std::collections::HashSet<_>>()
-                                        .len();
-                                    (format!("{}{} ", changes, icons::CROSS), theme::ci_fail())
-                                },
-                                _ if approved > 0 => (format!("{}{} ", approved, icons::CHECK), theme::ci_pending()),
-                                _ => ("    ".to_string(), theme::dim()),
-                            }
-                        };
-
-                        (number_style, badge, badge_style)
+                            (theme::dim(), "    ".to_string(), theme::dim())
+                        }
                     } else {
                         (theme::dim(), "    ".to_string(), theme::dim())
                     };

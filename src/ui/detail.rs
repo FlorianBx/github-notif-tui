@@ -78,8 +78,17 @@ impl Widget for DetailPanel<'_> {
 
             lines.push(Line::raw(""));
 
+            let re_requested: std::collections::HashSet<_> =
+                d.requested_reviewers.iter().collect();
+            let active_changes = d.reviews.iter()
+                .filter(|r| r.state == "CHANGES_REQUESTED")
+                .any(|r| !re_requested.contains(&r.author.login));
+
             let decision_label = match d.review_decision.as_deref() {
                 Some("APPROVED") => Span::styled(format!("{} Approved", icons::CHECK), theme::ci_pass()),
+                Some("CHANGES_REQUESTED") if !active_changes => {
+                    Span::styled(format!("{} Re-review requested", icons::CLOCK), theme::ci_pending())
+                }
                 Some("CHANGES_REQUESTED") => {
                     Span::styled(format!("{} Changes requested", icons::CROSS), theme::ci_fail())
                 }
@@ -129,6 +138,9 @@ fn render_reviews_lines(details: &PrDetails, lines: &mut Vec<Line>) {
         return;
     }
 
+    let re_requested: std::collections::HashSet<_> =
+        details.requested_reviewers.iter().collect();
+
     let mut last_by_author: std::collections::HashMap<&str, &crate::gh::Review> =
         std::collections::HashMap::new();
     for r in &details.reviews {
@@ -139,12 +151,17 @@ fn render_reviews_lines(details: &PrDetails, lines: &mut Vec<Line>) {
     entries.sort_by_key(|r| r.submitted_at);
 
     for review in entries {
-        let (symbol, style) = match review.state.as_str() {
-            "APPROVED" => (icons::CHECK, theme::ci_pass()),
-            "CHANGES_REQUESTED" => (icons::CROSS, theme::ci_fail()),
-            "COMMENTED" => (icons::COMMENT, theme::dim()),
-            "DISMISSED" => (icons::SLASH, theme::dim()),
-            _ => (icons::DOT, theme::dim()),
+        let is_re_requested = re_requested.contains(&review.author.login);
+        let (symbol, style) = if is_re_requested && review.state == "CHANGES_REQUESTED" {
+            (icons::CLOCK, theme::ci_pending())
+        } else {
+            match review.state.as_str() {
+                "APPROVED" => (icons::CHECK, theme::ci_pass()),
+                "CHANGES_REQUESTED" => (icons::CROSS, theme::ci_fail()),
+                "COMMENTED" => (icons::COMMENT, theme::dim()),
+                "DISMISSED" => (icons::SLASH, theme::dim()),
+                _ => (icons::DOT, theme::dim()),
+            }
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {} ", symbol), style),
