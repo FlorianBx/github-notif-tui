@@ -1,4 +1,5 @@
 use crate::gh::{PrDetails, PrId, PullRequest};
+use crate::state::LocalState;
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 
@@ -10,6 +11,7 @@ pub enum FilterPreset {
     NeedsReview,
     NeedsWork,
     Draft,
+    Done,
 }
 
 impl FilterPreset {
@@ -20,6 +22,7 @@ impl FilterPreset {
             FilterPreset::NeedsReview => "Review",
             FilterPreset::NeedsWork => "Attention",
             FilterPreset::Draft => "Draft",
+            FilterPreset::Done => "Done",
         }
     }
 
@@ -29,13 +32,15 @@ impl FilterPreset {
             FilterPreset::Ready => FilterPreset::NeedsReview,
             FilterPreset::NeedsReview => FilterPreset::NeedsWork,
             FilterPreset::NeedsWork => FilterPreset::Draft,
-            FilterPreset::Draft => FilterPreset::All,
+            FilterPreset::Draft => FilterPreset::Done,
+            FilterPreset::Done => FilterPreset::All,
         }
     }
 
     pub fn prev(&self) -> Self {
         match self {
-            FilterPreset::All => FilterPreset::Draft,
+            FilterPreset::All => FilterPreset::Done,
+            FilterPreset::Done => FilterPreset::Draft,
             FilterPreset::Draft => FilterPreset::NeedsWork,
             FilterPreset::NeedsWork => FilterPreset::NeedsReview,
             FilterPreset::NeedsReview => FilterPreset::Ready,
@@ -191,17 +196,24 @@ impl TabState {
         query: &str,
         sort: &SortState,
         filter: FilterPreset,
+        done_set: &HashSet<(String, u64)>,
     ) -> Vec<&'a PullRequest> {
         let filtered: Vec<&'a PullRequest> = self
             .prs
             .iter()
             .filter(|pr| query.is_empty() || matches_query(pr, query))
-            .filter(|pr| match filter {
-                FilterPreset::All => true,
-                FilterPreset::Ready => self.pr_status(pr) == PrStatus::Ready,
-                FilterPreset::NeedsReview => self.pr_status(pr) == PrStatus::InProgress,
-                FilterPreset::NeedsWork => self.pr_status(pr) == PrStatus::NeedsWork,
-                FilterPreset::Draft => self.pr_status(pr) == PrStatus::Draft,
+            .filter(|pr| {
+                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                let is_done = done_set.contains(&pr_id);
+                match filter {
+                    FilterPreset::Done => is_done,
+                    _ if is_done => false,
+                    FilterPreset::All => true,
+                    FilterPreset::Ready => self.pr_status(pr) == PrStatus::Ready,
+                    FilterPreset::NeedsReview => self.pr_status(pr) == PrStatus::InProgress,
+                    FilterPreset::NeedsWork => self.pr_status(pr) == PrStatus::NeedsWork,
+                    FilterPreset::Draft => self.pr_status(pr) == PrStatus::Draft,
+                }
             })
             .collect();
 
@@ -246,8 +258,9 @@ impl TabState {
         query: &str,
         sort: &SortState,
         filter: FilterPreset,
+        done_set: &HashSet<(String, u64)>,
     ) -> Option<&'a PullRequest> {
-        self.visible_prs(query, sort, filter)
+        self.visible_prs(query, sort, filter, done_set)
             .into_iter()
             .nth(self.selected)
     }
@@ -258,8 +271,14 @@ impl TabState {
         }
     }
 
-    pub fn move_down(&mut self, query: &str, sort: &SortState, filter: FilterPreset) {
-        let count = self.visible_prs(query, sort, filter).len();
+    pub fn move_down(
+        &mut self,
+        query: &str,
+        sort: &SortState,
+        filter: FilterPreset,
+        done_set: &HashSet<(String, u64)>,
+    ) {
+        let count = self.visible_prs(query, sort, filter, done_set).len();
         if count > 0 && self.selected < count - 1 {
             self.selected += 1;
         }
@@ -269,8 +288,14 @@ impl TabState {
         self.selected = 0;
     }
 
-    pub fn go_to_last(&mut self, query: &str, sort: &SortState, filter: FilterPreset) {
-        let count = self.visible_prs(query, sort, filter).len();
+    pub fn go_to_last(
+        &mut self,
+        query: &str,
+        sort: &SortState,
+        filter: FilterPreset,
+        done_set: &HashSet<(String, u64)>,
+    ) {
+        let count = self.visible_prs(query, sort, filter, done_set).len();
         if count > 0 {
             self.selected = count - 1;
         }
@@ -311,6 +336,7 @@ pub struct AppState {
     pub sort: SortState,
     pub filter: FilterPreset,
     pub show_help: bool,
+    pub local_state: LocalState,
 }
 
 impl Default for AppState {
@@ -332,6 +358,7 @@ impl Default for AppState {
             sort: SortState::default(),
             filter: FilterPreset::All,
             show_help: false,
+            local_state: crate::state::load_state(),
         }
     }
 }
