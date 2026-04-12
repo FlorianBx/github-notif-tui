@@ -23,12 +23,13 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
 
 fn render_app(area: Rect, buf: &mut Buffer, state: &AppState) {
     let has_search = state.search_mode || !state.search_query.is_empty();
+    let has_snooze = state.snooze_mode;
     let mut constraints = vec![
         Constraint::Length(2),
         Constraint::Length(1),
         Constraint::Min(0),
     ];
-    if has_search {
+    if has_search || has_snooze {
         constraints.push(Constraint::Length(1));
     }
     constraints.push(Constraint::Length(1));
@@ -43,7 +44,10 @@ fn render_app(area: Rect, buf: &mut Buffer, state: &AppState) {
     render_body(chunks[2], buf, state);
 
     let mut footer_idx = 3;
-    if has_search {
+    if has_snooze {
+        render_snooze_bar(chunks[3], buf);
+        footer_idx = 4;
+    } else if has_search {
         render_search_bar(chunks[3], buf, state);
         footer_idx = 4;
     }
@@ -62,6 +66,7 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
         FilterPreset::NeedsWork,
         FilterPreset::Draft,
         FilterPreset::Done,
+        FilterPreset::Snoozed,
     ];
     let dot = |p: FilterPreset| -> (&str, ratatui::style::Style) {
         match p {
@@ -71,6 +76,7 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
             FilterPreset::NeedsWork => ("● ", theme::ci_fail()),
             FilterPreset::Draft => ("○ ", theme::dim()),
             FilterPreset::Done => ("✓ ", theme::dim()),
+            FilterPreset::Snoozed => ("◷ ", theme::ci_pending()),
         }
     };
     let mut spans: Vec<Span> = vec![Span::styled(" f ", theme::dim())];
@@ -105,9 +111,9 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     let tab = state.active_tab_state();
     let tab_enum = crate::app::Tab::from(state.active_tab);
 
-    let done = &state.local_state.done;
+    let local = &state.local_state;
     let visible_count = tab
-        .visible_prs(&state.search_query, &state.sort, state.filter, done)
+        .visible_prs(&state.search_query, &state.sort, state.filter, local)
         .len();
     let sel_count = tab.selected_set.len();
     let total = tab.prs.len();
@@ -134,7 +140,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         query: &state.search_query,
         sort: &state.sort,
         filter: state.filter,
-        done_set: done,
+        local,
     }
     .render(split[0], buf, &mut list_state);
 
@@ -143,9 +149,26 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         query: &state.search_query,
         sort: &state.sort,
         filter: state.filter,
-        done_set: done,
+        local,
     }
     .render(split[1], buf);
+}
+
+fn render_snooze_bar(area: Rect, buf: &mut Buffer) {
+    let spans = vec![
+        Span::styled(" Snooze: ", theme::header()),
+        Span::styled("1", theme::tab_active()),
+        Span::styled("=1h  ", theme::dim()),
+        Span::styled("4", theme::tab_active()),
+        Span::styled("=4h  ", theme::dim()),
+        Span::styled("t", theme::tab_active()),
+        Span::styled("=tomorrow  ", theme::dim()),
+        Span::styled("w", theme::tab_active()),
+        Span::styled("=next week  ", theme::dim()),
+        Span::styled("Esc", theme::tab_active()),
+        Span::styled("=cancel", theme::dim()),
+    ];
+    Paragraph::new(Line::from(spans)).render(area, buf);
 }
 
 fn render_search_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
@@ -177,7 +200,9 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
     };
 
     let sel_count = state.active_tab_state().selected_set.len();
-    let text = if state.search_mode {
+    let text = if state.snooze_mode {
+        " 1=1h  4=4h  t=tomorrow  w=next week  Esc cancel".to_string()
+    } else if state.search_mode {
         " Esc cancel  Enter confirm".to_string()
     } else if sel_count > 0 {
         format!(
@@ -186,7 +211,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         )
     } else {
         format!(
-            " q quit  o open  d done  / search  f filter  s sort{}  ? help{}",
+            " q quit  o open  d done  z snooze  / search  f filter  s sort{}  ? help{}",
             sort_info, refresh_info
         )
     };
