@@ -1,4 +1,5 @@
 use crate::app::{FilterPreset, PrStatus, SortKey, SortState, TabState};
+use crate::state::LocalState;
 use crate::ui::theme;
 use chrono::Utc;
 use ratatui::{
@@ -8,7 +9,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, StatefulWidget},
 };
-use std::collections::HashSet;
 
 const AUTHOR_COL: usize = 10;
 const AGE_COL: usize = 6;
@@ -54,7 +54,7 @@ pub struct PrList<'a> {
     pub query: &'a str,
     pub sort: &'a SortState,
     pub filter: FilterPreset,
-    pub done_set: &'a HashSet<(String, u64)>,
+    pub local: &'a LocalState,
 }
 
 impl StatefulWidget for PrList<'_> {
@@ -64,8 +64,8 @@ impl StatefulWidget for PrList<'_> {
         let inner_width = area.width.saturating_sub(2) as usize;
         let has_selection = self.tab.has_selection();
 
-        let visible = self.tab.visible_prs(self.query, self.sort, self.filter, self.done_set);
-        let is_done_filter = self.filter == FilterPreset::Done;
+        let visible = self.tab.visible_prs(self.query, self.sort, self.filter, self.local);
+        let is_muted_filter = self.filter == FilterPreset::Done || self.filter == FilterPreset::Snoozed;
         let items: Vec<ListItem> = visible
             .iter()
             .enumerate()
@@ -114,7 +114,7 @@ impl StatefulWidget for PrList<'_> {
                 let title_width = inner_width.saturating_sub(fixed_width);
                 let title_padded = truncate_pad(&pr.title, title_width);
 
-                let row_style = if is_done_filter {
+                let row_style = if is_muted_filter {
                     theme::dim()
                 } else if i == self.tab.selected {
                     theme::selected_row()

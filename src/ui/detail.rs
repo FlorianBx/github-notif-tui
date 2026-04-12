@@ -1,5 +1,6 @@
 use crate::app::{FilterPreset, SortState, TabState};
 use crate::review::{analyze_reviewers, has_active_changes, ReviewStatus};
+use crate::state::LocalState;
 use crate::ui::{icons, theme};
 use chrono::Utc;
 use ratatui::{
@@ -8,7 +9,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
 };
-use std::collections::HashSet;
 
 fn rel_age(dt: &chrono::DateTime<chrono::Utc>) -> String {
     let secs = (Utc::now() - *dt).num_seconds().unsigned_abs();
@@ -21,14 +21,14 @@ pub struct DetailPanel<'a> {
     pub query: &'a str,
     pub sort: &'a SortState,
     pub filter: FilterPreset,
-    pub done_set: &'a HashSet<(String, u64)>,
+    pub local: &'a LocalState,
 }
 
 impl Widget for DetailPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL).title("Detail");
 
-        let Some(pr) = self.tab.selected_pr(self.query, self.sort, self.filter, self.done_set) else {
+        let Some(pr) = self.tab.selected_pr(self.query, self.sort, self.filter, self.local) else {
             Paragraph::new("No PR selected")
                 .block(block)
                 .render(area, buf);

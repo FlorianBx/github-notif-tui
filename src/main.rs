@@ -8,7 +8,7 @@ mod state;
 mod ui;
 
 use app::{AppState, SortDir, SortKey, SortState};
-use chrono::Utc;
+use chrono::{Duration, Utc};
 use color_eyre::Result;
 use crossterm::{
     execute,
@@ -60,6 +60,8 @@ async fn run(
                         KeyCode::Char('?') | KeyCode::Esc => state.show_help = false,
                         _ => {}
                     }
+                } else if state.snooze_mode {
+                    handle_snooze_key(&mut state, key.code);
                 } else if state.search_mode {
                     handle_search_key(&mut state, key.code, key.modifiers, tx.clone());
                 } else {
@@ -118,7 +120,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
     let query = state.search_query.clone();
     let sort = state.sort.clone();
     let filter = state.filter;
-    let done = state.local_state.done.clone();
+    let local = state.local_state.clone();
     match code {
         KeyCode::Tab | KeyCode::Char('l') => {
             state.next_tab();
@@ -129,7 +131,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            state.active_tab_state_mut().move_down(&query, &sort, filter, &done);
+            state.active_tab_state_mut().move_down(&query, &sort, filter, &local);
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('k') | KeyCode::Up => {
@@ -137,7 +139,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('G') => {
-            state.active_tab_state_mut().go_to_last(&query, &sort, filter, &done);
+            state.active_tab_state_mut().go_to_last(&query, &sort, filter, &local);
             state.pending_g = false;
             spawn_fetch_detail_if_needed(state, tx);
         }
@@ -171,6 +173,10 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             toggle_done(state);
             state.pending_g = false;
         }
+        KeyCode::Char('z') => {
+            state.snooze_mode = true;
+            state.pending_g = false;
+        }
         KeyCode::Char('f') => {
             state.filter = state.filter.next();
             state.active_tab_state_mut().selected = 0;
@@ -186,12 +192,12 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
         KeyCode::Char('v') => {
             let idx = state.active_tab_state().selected;
             state.active_tab_state_mut().toggle_selection(idx);
-            state.active_tab_state_mut().move_down(&query, &sort, filter, &done);
+            state.active_tab_state_mut().move_down(&query, &sort, filter, &local);
             state.pending_g = false;
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('V') => {
-            let count = state.active_tab_state().visible_prs(&query, &sort, filter, &done).len();
+            let count = state.active_tab_state().visible_prs(&query, &sort, filter, &local).len();
             state.active_tab_state_mut().select_all_visible(count);
             state.pending_g = false;
         }
@@ -303,15 +309,83 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
     }
 }
 
+fn handle_snooze_key(state: &mut AppState, code: KeyCode) {
+    let duration = match code {
+        KeyCode::Char('1') => Some(Duration::hours(1)),
+        KeyCode::Char('4') => Some(Duration::hours(4)),
+        KeyCode::Char('t') => {
+            let now = Utc::now();
+            let tomorrow = (now + Duration::days(1))
+                .date_naive()
+                .and_hms_opt(9, 0, 0)
+                .and_then(|dt| dt.and_local_timezone(chrono::Utc).single());
+            tomorrow.map(|t| t - now)
+        }
+        KeyCode::Char('w') => {
+            let now = Utc::now();
+            let days_until_monday = (8 - now.format("%u").to_string().parse::<i64>().unwrap_or(1)) % 7;
+            let days_until_monday = if days_until_monday == 0 { 7 } else { days_until_monday };
+            let monday = (now + Duration::days(days_until_monday))
+                .date_naive()
+                .and_hms_opt(9, 0, 0)
+                .and_then(|dt| dt.and_local_timezone(chrono::Utc).single());
+            monday.map(|t| t - now)
+        }
+        KeyCode::Esc => {
+            state.snooze_mode = false;
+            return;
+        }
+        _ => return,
+    };
+
+    if let Some(dur) = duration {
+        apply_snooze(state, Utc::now() + dur);
+    }
+    state.snooze_mode = false;
+}
+
+fn apply_snooze(state: &mut AppState, wake_at: chrono::DateTime<Utc>) {
+    let query = state.search_query.clone();
+    let sort = state.sort.clone();
+    let filter = state.filter;
+    let local = state.local_state.clone();
+    let tab = state.active_tab_state();
+
+    if tab.has_selection() {
+        let visible = tab.visible_prs(&query, &sort, filter, &local);
+        let ids: Vec<(String, u64)> = tab
+            .selected_set
+            .iter()
+            .filter_map(|&idx| {
+                visible
+                    .get(idx)
+                    .map(|pr| (pr.repository.name_with_owner.clone(), pr.number))
+            })
+            .collect();
+        for id in ids {
+            state.local_state.snoozed.insert(id, wake_at);
+        }
+        state.active_tab_state_mut().clear_selection();
+    } else {
+        let Some(pr) = tab.selected_pr(&query, &sort, filter, &local) else {
+            return;
+        };
+        let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+        state.local_state.snoozed.insert(pr_id, wake_at);
+    }
+
+    state::save_state(&state.local_state);
+}
+
 fn toggle_done(state: &mut AppState) {
     let query = state.search_query.clone();
     let sort = state.sort.clone();
     let filter = state.filter;
-    let done = state.local_state.done.clone();
+    let local = state.local_state.clone();
     let tab = state.active_tab_state();
 
     if tab.has_selection() {
-        let visible = tab.visible_prs(&query, &sort, filter, &done);
+        let visible = tab.visible_prs(&query, &sort, filter, &local);
         let ids: Vec<(String, u64)> = tab
             .selected_set
             .iter()
@@ -328,7 +402,7 @@ fn toggle_done(state: &mut AppState) {
         }
         state.active_tab_state_mut().clear_selection();
     } else {
-        let Some(pr) = tab.selected_pr(&query, &sort, filter, &done) else {
+        let Some(pr) = tab.selected_pr(&query, &sort, filter, &local) else {
             return;
         };
         let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
@@ -343,7 +417,7 @@ fn toggle_done(state: &mut AppState) {
 fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppEvent>) {
     let tab = state.active_tab_state();
     let query = &state.search_query;
-    let Some(pr) = tab.selected_pr(query, &state.sort, state.filter, &state.local_state.done) else { return };
+    let Some(pr) = tab.selected_pr(query, &state.sort, state.filter, &state.local_state) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
     if tab.details_cache.contains_key(&pr_id) || tab.failed_details.contains(&pr_id) {
         return;
@@ -359,7 +433,7 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
 
 fn open_in_browser(state: &AppState) {
     let query = &state.search_query;
-    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort, state.filter, &state.local_state.done) else { return };
+    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort, state.filter, &state.local_state) else { return };
     let url = pr.url.clone();
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;
@@ -370,7 +444,7 @@ const MAX_BULK_OPEN: usize = 10;
 
 fn open_selected_in_browser(state: &mut AppState) {
     let tab = state.active_tab_state();
-    let visible = tab.visible_prs(&state.search_query, &state.sort, state.filter, &state.local_state.done);
+    let visible = tab.visible_prs(&state.search_query, &state.sort, state.filter, &state.local_state);
     let urls: Vec<String> = tab
         .selected_set
         .iter()

@@ -1,12 +1,15 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct LocalState {
     #[serde(default)]
     pub done: HashSet<(String, u64)>,
+    #[serde(default)]
+    pub snoozed: HashMap<(String, u64), DateTime<Utc>>,
 }
 
 fn state_path() -> PathBuf {
