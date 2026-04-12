@@ -177,6 +177,10 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             state.snooze_mode = true;
             state.pending_g = false;
         }
+        KeyCode::Char('p') => {
+            toggle_pin(state);
+            state.pending_g = false;
+        }
         KeyCode::Char('f') => {
             state.filter = state.filter.next();
             state.active_tab_state_mut().selected = 0;
@@ -311,7 +315,7 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
 
 fn handle_snooze_key(state: &mut AppState, code: KeyCode) {
     let duration = match code {
-        KeyCode::Char('1') => Some(Duration::hours(1)),
+        KeyCode::Char('z') | KeyCode::Char('1') => Some(Duration::hours(1)),
         KeyCode::Char('4') => Some(Duration::hours(4)),
         KeyCode::Char('t') => {
             let now = Utc::now();
@@ -374,6 +378,22 @@ fn apply_snooze(state: &mut AppState, wake_at: chrono::DateTime<Utc>) {
         state.local_state.snoozed.insert(pr_id, wake_at);
     }
 
+    state::save_state(&state.local_state);
+}
+
+fn toggle_pin(state: &mut AppState) {
+    let query = state.search_query.clone();
+    let sort = state.sort.clone();
+    let filter = state.filter;
+    let local = state.local_state.clone();
+    let tab = state.active_tab_state();
+    let Some(pr) = tab.selected_pr(&query, &sort, filter, &local) else {
+        return;
+    };
+    let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+    if !state.local_state.pinned.remove(&pr_id) {
+        state.local_state.pinned.insert(pr_id);
+    }
     state::save_state(&state.local_state);
 }
 

@@ -105,6 +105,7 @@ impl StatefulWidget for PrList<'_> {
 
                 let fixed_width = sel_prefix.0.chars().count()
                     + score_col.0.chars().count()
+                    + 1 // pin column
                     + dot.chars().count()
                     + 1
                     + AUTHOR_COL
@@ -114,6 +115,8 @@ impl StatefulWidget for PrList<'_> {
                 let title_width = inner_width.saturating_sub(fixed_width);
                 let title_padded = truncate_pad(&pr.title, title_width);
 
+                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                let is_pinned = self.local.pinned.contains(&pr_id);
                 let row_style = if is_muted_filter {
                     theme::dim()
                 } else if i == self.tab.selected {
@@ -122,13 +125,16 @@ impl StatefulWidget for PrList<'_> {
                     theme::normal_row()
                 };
 
-                let mut spans = Vec::with_capacity(8);
+                let pin_col = if is_pinned { ("▪", theme::header()) } else { (" ", theme::dim()) };
+
+                let mut spans = Vec::with_capacity(10);
                 if !sel_prefix.0.is_empty() {
                     spans.push(Span::styled(sel_prefix.0, sel_prefix.1));
                 }
                 if !score_col.0.is_empty() {
                     spans.push(Span::styled(score_col.0, score_col.1));
                 }
+                spans.push(Span::styled(pin_col.0, pin_col.1));
                 spans.push(Span::styled(dot, dot_style));
                 spans.push(Span::styled(title_padded, row_style));
                 spans.push(Span::raw(" "));

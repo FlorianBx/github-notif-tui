@@ -157,6 +157,8 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
 fn render_snooze_bar(area: Rect, buf: &mut Buffer) {
     let spans = vec![
         Span::styled(" Snooze: ", theme::header()),
+        Span::styled("z", theme::tab_active()),
+        Span::styled("/", theme::dim()),
         Span::styled("1", theme::tab_active()),
         Span::styled("=1h  ", theme::dim()),
         Span::styled("4", theme::tab_active()),
@@ -211,7 +213,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         )
     } else {
         format!(
-            " q quit  o open  d done  z snooze  / search  f filter  s sort{}  ? help{}",
+            " q quit  o open  / search  f filter  s sort{}  ? help{}",
             sort_info, refresh_info
         )
     };
