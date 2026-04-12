@@ -13,6 +13,7 @@ pub enum FilterPreset {
     Draft,
     Done,
     Snoozed,
+    Unread,
 }
 
 impl FilterPreset {
@@ -25,6 +26,7 @@ impl FilterPreset {
             FilterPreset::Draft => "Draft",
             FilterPreset::Done => "Done",
             FilterPreset::Snoozed => "Snoozed",
+            FilterPreset::Unread => "Unread",
         }
     }
 
@@ -36,13 +38,15 @@ impl FilterPreset {
             FilterPreset::NeedsWork => FilterPreset::Draft,
             FilterPreset::Draft => FilterPreset::Done,
             FilterPreset::Done => FilterPreset::Snoozed,
-            FilterPreset::Snoozed => FilterPreset::All,
+            FilterPreset::Snoozed => FilterPreset::Unread,
+            FilterPreset::Unread => FilterPreset::All,
         }
     }
 
     pub fn prev(&self) -> Self {
         match self {
-            FilterPreset::All => FilterPreset::Snoozed,
+            FilterPreset::All => FilterPreset::Unread,
+            FilterPreset::Unread => FilterPreset::Snoozed,
             FilterPreset::Snoozed => FilterPreset::Done,
             FilterPreset::Done => FilterPreset::Draft,
             FilterPreset::Draft => FilterPreset::NeedsWork,
@@ -214,9 +218,11 @@ impl TabState {
                     .snoozed
                     .get(&pr_id)
                     .is_some_and(|wake| now < *wake);
+                let is_unread = !local.read.contains(&pr_id);
                 match filter {
                     FilterPreset::Done => is_done,
                     FilterPreset::Snoozed => is_snoozed,
+                    FilterPreset::Unread => !is_done && !is_snoozed && is_unread,
                     _ if is_done || is_snoozed => false,
                     FilterPreset::All => true,
                     FilterPreset::Ready => self.pr_status(pr) == PrStatus::Ready,

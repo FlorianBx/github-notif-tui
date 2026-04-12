@@ -114,10 +114,14 @@ impl StatefulWidget for PrList<'_> {
                 let title_width = inner_width.saturating_sub(fixed_width);
                 let title_padded = truncate_pad(&pr.title, title_width);
 
+                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                let is_unread = !self.local.read.contains(&pr_id);
                 let row_style = if is_muted_filter {
                     theme::dim()
                 } else if i == self.tab.selected {
                     theme::selected_row()
+                } else if is_unread {
+                    theme::unread_row()
                 } else {
                     theme::normal_row()
                 };
