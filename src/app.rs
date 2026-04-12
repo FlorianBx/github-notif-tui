@@ -266,7 +266,18 @@ impl TabState {
             sorted.reverse();
         }
 
-        sorted
+        let mut pinned_items: Vec<&PullRequest> = Vec::new();
+        let mut rest: Vec<&PullRequest> = Vec::new();
+        for pr in sorted {
+            let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+            if local.pinned.contains(&pr_id) {
+                pinned_items.push(pr);
+            } else {
+                rest.push(pr);
+            }
+        }
+        pinned_items.extend(rest);
+        pinned_items
     }
 
     pub fn selected_pr<'a>(

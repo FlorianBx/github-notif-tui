@@ -12,6 +12,8 @@ pub struct LocalState {
     pub snoozed: HashMap<(String, u64), DateTime<Utc>>,
     #[serde(default)]
     pub read: HashSet<(String, u64)>,
+    #[serde(default)]
+    pub pinned: HashSet<(String, u64)>,
 }
 
 fn state_path() -> PathBuf {
