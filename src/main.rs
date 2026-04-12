@@ -319,7 +319,7 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
 
 fn handle_snooze_key(state: &mut AppState, code: KeyCode) {
     let duration = match code {
-        KeyCode::Char('1') => Some(Duration::hours(1)),
+        KeyCode::Char('z') | KeyCode::Char('1') => Some(Duration::hours(1)),
         KeyCode::Char('4') => Some(Duration::hours(4)),
         KeyCode::Char('t') => {
             let now = Utc::now();

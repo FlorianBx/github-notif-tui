@@ -159,6 +159,8 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
 fn render_snooze_bar(area: Rect, buf: &mut Buffer) {
     let spans = vec![
         Span::styled(" Snooze: ", theme::header()),
+        Span::styled("z", theme::tab_active()),
+        Span::styled("/", theme::dim()),
         Span::styled("1", theme::tab_active()),
         Span::styled("=1h  ", theme::dim()),
         Span::styled("4", theme::tab_active()),
