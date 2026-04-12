@@ -5,7 +5,7 @@ pub mod list;
 pub mod tabs;
 pub mod theme;
 
-use crate::app::{AppState, SortDir, SortKey};
+use crate::app::{AppState, FilterPreset, SortDir, SortKey};
 use crate::ui::{detail::DetailPanel, help::HelpOverlay, list::PrList, tabs::TabsBar};
 use ratatui::{
     buffer::Buffer,
@@ -22,20 +22,16 @@ pub fn draw(frame: &mut Frame, state: &AppState) {
 }
 
 fn render_app(area: Rect, buf: &mut Buffer, state: &AppState) {
-    let constraints = if state.search_mode || !state.search_query.is_empty() {
-        vec![
-            Constraint::Length(2),
-            Constraint::Min(0),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ]
-    } else {
-        vec![
-            Constraint::Length(2),
-            Constraint::Min(0),
-            Constraint::Length(1),
-        ]
-    };
+    let has_search = state.search_mode || !state.search_query.is_empty();
+    let mut constraints = vec![
+        Constraint::Length(2),
+        Constraint::Length(1),
+        Constraint::Min(0),
+    ];
+    if has_search {
+        constraints.push(Constraint::Length(1));
+    }
+    constraints.push(Constraint::Length(1));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -43,18 +39,50 @@ fn render_app(area: Rect, buf: &mut Buffer, state: &AppState) {
         .split(area);
 
     TabsBar { state }.render(chunks[0], buf);
-    render_body(chunks[1], buf, state);
+    render_filter_bar(chunks[1], buf, state);
+    render_body(chunks[2], buf, state);
 
-    if state.search_mode || !state.search_query.is_empty() {
-        render_search_bar(chunks[2], buf, state);
-        render_footer(chunks[3], buf, state);
-    } else {
-        render_footer(chunks[2], buf, state);
+    let mut footer_idx = 3;
+    if has_search {
+        render_search_bar(chunks[3], buf, state);
+        footer_idx = 4;
     }
+    render_footer(chunks[footer_idx], buf, state);
 
     if state.show_help {
         HelpOverlay.render(area, buf);
     }
+}
+
+fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
+    let presets = [
+        FilterPreset::All,
+        FilterPreset::Ready,
+        FilterPreset::NeedsReview,
+        FilterPreset::NeedsWork,
+        FilterPreset::Draft,
+    ];
+    let dot = |p: FilterPreset| -> (&str, ratatui::style::Style) {
+        match p {
+            FilterPreset::All => ("", theme::dim()),
+            FilterPreset::Ready => ("● ", theme::ci_pass()),
+            FilterPreset::NeedsReview => ("● ", theme::ci_pending()),
+            FilterPreset::NeedsWork => ("● ", theme::ci_fail()),
+            FilterPreset::Draft => ("○ ", theme::dim()),
+        }
+    };
+    let mut spans: Vec<Span> = vec![Span::styled(" f ", theme::dim())];
+    for p in presets {
+        let active = p == state.filter;
+        let (d, ds) = dot(p);
+        let label_style = if active { theme::tab_active() } else { theme::dim() };
+        if !d.is_empty() {
+            spans.push(Span::styled(d, ds));
+        }
+        spans.push(Span::styled(p.label(), label_style));
+        spans.push(Span::styled("  ", theme::dim()));
+    }
+    Paragraph::new(Line::from(spans)).render(area, buf);
 }
 
 fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
@@ -75,14 +103,17 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     let tab = state.active_tab_state();
     let tab_enum = crate::app::Tab::from(state.active_tab);
 
-    let visible_count = tab.visible_prs(&state.search_query, &state.sort).len();
+    let visible_count = tab
+        .visible_prs(&state.search_query, &state.sort, state.filter)
+        .len();
     let sel_count = tab.selected_set.len();
+    let total = tab.prs.len();
     let title = if tab.loading {
         format!(" {} — loading… ", tab_enum.label())
     } else if sel_count > 0 {
         format!(" {} ({} selected) ", tab_enum.label(), sel_count)
-    } else if !state.search_query.is_empty() {
-        format!(" {} ({}/{}) ", tab_enum.label(), visible_count, tab.prs.len())
+    } else if state.filter != FilterPreset::All || !state.search_query.is_empty() {
+        format!(" {} ({}/{}) ", tab_enum.label(), visible_count, total)
     } else {
         format!(" {} ", tab_enum.label())
     };
@@ -99,6 +130,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         title: Box::leak(title.into_boxed_str()),
         query: &state.search_query,
         sort: &state.sort,
+        filter: state.filter,
     }
     .render(split[0], buf, &mut list_state);
 
@@ -106,6 +138,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         tab,
         query: &state.search_query,
         sort: &state.sort,
+        filter: state.filter,
     }
     .render(split[1], buf);
 }
@@ -113,11 +146,9 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
 fn render_search_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
     let cursor = if state.search_mode { "█" } else { "" };
     let text = format!("/{}{}", state.search_query, cursor);
-    Paragraph::new(Line::from(vec![
-        Span::styled(text, theme::header()),
-    ]))
-    .block(Block::default().borders(Borders::NONE))
-    .render(area, buf);
+    Paragraph::new(Line::from(vec![Span::styled(text, theme::header())]))
+        .block(Block::default().borders(Borders::NONE))
+        .render(area, buf);
 }
 
 fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
@@ -130,7 +161,11 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         .unwrap_or_default();
 
     let sort_info = if state.sort.key != SortKey::Default {
-        let arrow = if state.sort.dir == SortDir::Asc { "↑" } else { "↓" };
+        let arrow = if state.sort.dir == SortDir::Asc {
+            "↑"
+        } else {
+            "↓"
+        };
         format!("  · sort: {} {}", state.sort.key.label(), arrow)
     } else {
         String::new()
@@ -146,7 +181,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         )
     } else {
         format!(
-            " q quit  o open  / search  s sort{}  ? help{}",
+            " q quit  o open  / search  f filter  s sort{}  ? help{}",
             sort_info, refresh_info
         )
     };

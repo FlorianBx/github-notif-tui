@@ -116,6 +116,7 @@ async fn run(
 fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSender<AppEvent>) {
     let query = state.search_query.clone();
     let sort = state.sort.clone();
+    let filter = state.filter;
     match code {
         KeyCode::Tab | KeyCode::Char('l') => {
             state.next_tab();
@@ -126,15 +127,15 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('j') | KeyCode::Down => {
-            state.active_tab_state_mut().move_down(&query, &sort);
+            state.active_tab_state_mut().move_down(&query, &sort, filter);
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('k') | KeyCode::Up => {
-            state.active_tab_state_mut().move_up(&query);
+            state.active_tab_state_mut().move_up();
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('G') => {
-            state.active_tab_state_mut().go_to_last(&query, &sort);
+            state.active_tab_state_mut().go_to_last(&query, &sort, filter);
             state.pending_g = false;
             spawn_fetch_detail_if_needed(state, tx);
         }
@@ -164,15 +165,21 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             }
             spawn_fetch_all(tx);
         }
+        KeyCode::Char('f') => {
+            state.filter = state.filter.next();
+            state.active_tab_state_mut().selected = 0;
+            state.active_tab_state_mut().clear_selection();
+            state.pending_g = false;
+        }
         KeyCode::Char('v') => {
             let idx = state.active_tab_state().selected;
             state.active_tab_state_mut().toggle_selection(idx);
-            state.active_tab_state_mut().move_down(&query, &sort);
+            state.active_tab_state_mut().move_down(&query, &sort, filter);
             state.pending_g = false;
             spawn_fetch_detail_if_needed(state, tx);
         }
         KeyCode::Char('V') => {
-            let count = state.active_tab_state().visible_prs(&query, &sort).len();
+            let count = state.active_tab_state().visible_prs(&query, &sort, filter).len();
             state.active_tab_state_mut().select_all_visible(count);
             state.pending_g = false;
         }
@@ -287,7 +294,7 @@ fn spawn_fetch_all_details(prs: &[crate::gh::PullRequest], tx: mpsc::UnboundedSe
 fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppEvent>) {
     let tab = state.active_tab_state();
     let query = &state.search_query;
-    let Some(pr) = tab.selected_pr(query, &state.sort) else { return };
+    let Some(pr) = tab.selected_pr(query, &state.sort, state.filter) else { return };
     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
     if tab.details_cache.contains_key(&pr_id) || tab.failed_details.contains(&pr_id) {
         return;
@@ -303,7 +310,7 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
 
 fn open_in_browser(state: &AppState) {
     let query = &state.search_query;
-    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort) else { return };
+    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort, state.filter) else { return };
     let url = pr.url.clone();
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;
@@ -314,7 +321,7 @@ const MAX_BULK_OPEN: usize = 10;
 
 fn open_selected_in_browser(state: &mut AppState) {
     let tab = state.active_tab_state();
-    let visible = tab.visible_prs(&state.search_query, &state.sort);
+    let visible = tab.visible_prs(&state.search_query, &state.sort, state.filter);
     let urls: Vec<String> = tab
         .selected_set
         .iter()

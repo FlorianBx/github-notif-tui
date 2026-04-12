@@ -1,4 +1,4 @@
-use crate::app::{SortState, TabState};
+use crate::app::{FilterPreset, SortState, TabState};
 use crate::review::{analyze_reviewers, has_active_changes, ReviewStatus};
 use crate::ui::{icons, theme};
 use chrono::Utc;
@@ -19,13 +19,14 @@ pub struct DetailPanel<'a> {
     pub tab: &'a TabState,
     pub query: &'a str,
     pub sort: &'a SortState,
+    pub filter: FilterPreset,
 }
 
 impl Widget for DetailPanel<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default().borders(Borders::ALL).title("Detail");
 
-        let Some(pr) = self.tab.selected_pr(self.query, self.sort) else {
+        let Some(pr) = self.tab.selected_pr(self.query, self.sort, self.filter) else {
             Paragraph::new("No PR selected")
                 .block(block)
                 .render(area, buf);

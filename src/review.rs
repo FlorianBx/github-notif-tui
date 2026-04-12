@@ -57,10 +57,6 @@ pub fn analyze_reviewers(details: &PrDetails, pr_author: &str) -> Vec<ReviewerEn
     entries
 }
 
-pub fn approved_count(entries: &[ReviewerEntry]) -> usize {
-    entries.iter().filter(|e| e.status == ReviewStatus::Approved).count()
-}
-
 pub fn has_active_changes(entries: &[ReviewerEntry]) -> bool {
     entries.iter().any(|e| e.status == ReviewStatus::ChangesRequested)
 }
@@ -163,7 +159,8 @@ mod tests {
             vec![],
         );
         let entries = analyze_reviewers(&d, "author");
-        assert_eq!(approved_count(&entries), 1);
+        let n_approved = entries.iter().filter(|e| e.status == ReviewStatus::Approved).count();
+        assert_eq!(n_approved, 1);
         assert!(has_active_changes(&entries));
     }
 }

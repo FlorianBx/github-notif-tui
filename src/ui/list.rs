@@ -1,6 +1,5 @@
-use crate::app::{SortKey, SortState, TabState};
-use crate::review::{analyze_reviewers, approved_count, has_active_changes};
-use crate::ui::{icons, theme};
+use crate::app::{FilterPreset, PrStatus, SortKey, SortState, TabState};
+use crate::ui::theme;
 use chrono::Utc;
 use ratatui::{
     buffer::Buffer,
@@ -9,6 +8,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, StatefulWidget},
 };
+
+const AUTHOR_COL: usize = 10;
+const AGE_COL: usize = 6;
 
 fn format_age(dt: &chrono::DateTime<chrono::Utc>) -> (String, Style) {
     let secs = (Utc::now() - *dt).num_seconds().unsigned_abs();
@@ -30,11 +32,27 @@ fn format_age(dt: &chrono::DateTime<chrono::Utc>) -> (String, Style) {
     (short, style)
 }
 
+fn status_dot(status: PrStatus) -> (&'static str, Style) {
+    match status {
+        PrStatus::Ready => ("● ", theme::ci_pass()),
+        PrStatus::InProgress => ("● ", theme::ci_pending()),
+        PrStatus::NeedsWork => ("● ", theme::ci_fail()),
+        PrStatus::Draft => ("○ ", theme::dim()),
+    }
+}
+
+fn truncate_pad(s: &str, width: usize) -> String {
+    let truncated: String = s.chars().take(width).collect();
+    let pad = width.saturating_sub(truncated.chars().count());
+    format!("{}{:pad$}", truncated, "", pad = pad)
+}
+
 pub struct PrList<'a> {
     pub tab: &'a TabState,
     pub title: &'a str,
     pub query: &'a str,
     pub sort: &'a SortState,
+    pub filter: FilterPreset,
 }
 
 impl StatefulWidget for PrList<'_> {
@@ -42,58 +60,28 @@ impl StatefulWidget for PrList<'_> {
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut ListState) {
         let inner_width = area.width.saturating_sub(2) as usize;
+        let has_selection = self.tab.has_selection();
 
-        let visible = self.tab.visible_prs(self.query, self.sort);
+        let visible = self.tab.visible_prs(self.query, self.sort, self.filter);
         let items: Vec<ListItem> = visible
             .iter()
             .enumerate()
             .map(|(i, pr)| {
-                let is_selected = self.tab.selected_set.contains(&i);
-                let sel_prefix = if is_selected { "▸ " } else { "  " };
-
+                let status = self.tab.pr_status(pr);
+                let (dot, dot_style) = status_dot(status);
                 let (age, age_style) = format_age(&pr.created_at);
-                let draft = if pr.is_draft { " [D]" } else { "" };
-                let draft_len = draft.chars().count();
 
-                let age_col = format!(" {}", age);
-                let age_col_len = age_col.chars().count();
-
-                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-                let (number_style, badge, badge_style, ci_badge, ci_badge_style) =
-                    if let Some(d) = self.tab.details_cache.get(&pr_id) {
-                        let reviewers = analyze_reviewers(d, &pr.author.login);
-                        let n_approved = approved_count(&reviewers);
-                        let active = has_active_changes(&reviewers);
-                        let has_pending = reviewers.iter().any(|e| {
-                            e.status == crate::review::ReviewStatus::Pending
-                        });
-                        let fully_approved = d.review_decision.as_deref() == Some("APPROVED")
-                            && !has_pending;
-
-                        let (ci_b, ci_s) = match d.ci_status {
-                            crate::gh::CiStatus::Pass => (format!("{} ", icons::CHECK), theme::ci_pass()),
-                            crate::gh::CiStatus::Fail => (format!("{} ", icons::CROSS), theme::ci_fail()),
-                            crate::gh::CiStatus::Pending => (format!("{} ", icons::CLOCK), theme::ci_pending()),
-                            crate::gh::CiStatus::None => ("  ".to_string(), theme::dim()),
-                        };
-
-                        if active {
-                            let n_changes = reviewers.iter()
-                                .filter(|e| e.status == crate::review::ReviewStatus::ChangesRequested)
-                                .count();
-                            (theme::ci_fail(), format!("{}{} ", n_changes, icons::CROSS), theme::ci_fail(), ci_b, ci_s)
-                        } else if fully_approved || n_approved >= 2 {
-                            (theme::ci_pass(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pass(), ci_b, ci_s)
-                        } else if n_approved > 0 {
-                            (theme::ci_pending(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pending(), ci_b, ci_s)
-                        } else {
-                            (theme::dim(), "    ".to_string(), theme::dim(), ci_b, ci_s)
-                        }
+                let sel_prefix = if has_selection {
+                    if self.tab.selected_set.contains(&i) {
+                        ("▸ ", theme::ci_pass())
                     } else {
-                        (theme::dim(), "    ".to_string(), theme::dim(), "  ".to_string(), theme::dim())
-                    };
+                        ("  ", theme::dim())
+                    }
+                } else {
+                    ("", theme::dim())
+                };
 
-                let score_badge = if self.sort.key == SortKey::Priority {
+                let score_col = if self.sort.key == SortKey::Priority {
                     let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
                     let details = self.tab.details_cache.get(&pr_id);
                     let s = crate::score::compute_priority(pr, details);
@@ -104,27 +92,24 @@ impl StatefulWidget for PrList<'_> {
                     } else {
                         theme::ci_fail()
                     };
-                    (format!("[{:>2}] ", s), style)
+                    (format!("{:>2} ", s), style)
                 } else {
                     (String::new(), theme::dim())
                 };
 
-                let number_str = format!("#{:<5}", pr.number);
-                let prefix_len = sel_prefix.chars().count()
-                    + score_badge.0.chars().count()
-                    + number_str.chars().count()
+                let author_str = truncate_pad(&pr.author.login, AUTHOR_COL);
+                let age_str = format!("{:>width$}", age, width = AGE_COL);
+
+                let fixed_width = sel_prefix.0.chars().count()
+                    + score_col.0.chars().count()
+                    + dot.chars().count()
                     + 1
-                    + badge.chars().count()
-                    + ci_badge.chars().count();
+                    + AUTHOR_COL
+                    + 1
+                    + AGE_COL;
 
-                let title_width = inner_width
-                    .saturating_sub(prefix_len)
-                    .saturating_sub(draft_len)
-                    .saturating_sub(age_col_len);
-
-                let title_truncated: String = pr.title.chars().take(title_width).collect();
-                let pad = title_width.saturating_sub(title_truncated.chars().count());
-                let title_padded = format!("{}{:pad$}", title_truncated, "", pad = pad);
+                let title_width = inner_width.saturating_sub(fixed_width);
+                let title_padded = truncate_pad(&pr.title, title_width);
 
                 let row_style = if i == self.tab.selected {
                     theme::selected_row()
@@ -132,18 +117,19 @@ impl StatefulWidget for PrList<'_> {
                     theme::normal_row()
                 };
 
-                let sel_style = if is_selected { theme::ci_pass() } else { theme::dim() };
-                let spans = vec![
-                    Span::styled(sel_prefix, sel_style),
-                    Span::styled(score_badge.0, score_badge.1),
-                    Span::styled(number_str, number_style),
-                    Span::raw(" "),
-                    Span::styled(badge, badge_style),
-                    Span::styled(ci_badge, ci_badge_style),
-                    Span::styled(title_padded, row_style),
-                    Span::styled(draft.to_string(), theme::dim()),
-                    Span::styled(age_col, age_style),
-                ];
+                let mut spans = Vec::with_capacity(8);
+                if !sel_prefix.0.is_empty() {
+                    spans.push(Span::styled(sel_prefix.0, sel_prefix.1));
+                }
+                if !score_col.0.is_empty() {
+                    spans.push(Span::styled(score_col.0, score_col.1));
+                }
+                spans.push(Span::styled(dot, dot_style));
+                spans.push(Span::styled(title_padded, row_style));
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(author_str, theme::dim()));
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(age_str, age_style));
 
                 ListItem::new(Line::from(spans))
             })

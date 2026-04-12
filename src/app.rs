@@ -2,6 +2,47 @@ use crate::gh::{PrDetails, PrId, PullRequest};
 use chrono::{DateTime, Utc};
 use std::collections::{HashMap, HashSet};
 
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
+pub enum FilterPreset {
+    #[default]
+    All,
+    Ready,
+    NeedsReview,
+    NeedsWork,
+    Draft,
+}
+
+impl FilterPreset {
+    pub fn label(&self) -> &'static str {
+        match self {
+            FilterPreset::All => "All",
+            FilterPreset::Ready => "Ready",
+            FilterPreset::NeedsReview => "Review",
+            FilterPreset::NeedsWork => "Attention",
+            FilterPreset::Draft => "Draft",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            FilterPreset::All => FilterPreset::Ready,
+            FilterPreset::Ready => FilterPreset::NeedsReview,
+            FilterPreset::NeedsReview => FilterPreset::NeedsWork,
+            FilterPreset::NeedsWork => FilterPreset::Draft,
+            FilterPreset::Draft => FilterPreset::All,
+        }
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Debug)]
+pub enum PrStatus {
+    Ready,
+    #[default]
+    InProgress,
+    NeedsWork,
+    Draft,
+}
+
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum SortKey {
     #[default]
@@ -105,15 +146,48 @@ fn matches_query(pr: &PullRequest, query: &str) -> bool {
 }
 
 impl TabState {
-    pub fn visible_prs<'a>(&'a self, query: &str, sort: &SortState) -> Vec<&'a PullRequest> {
-        let filtered: Vec<&'a PullRequest> = if query.is_empty() {
-            self.prs.iter().collect()
-        } else {
-            self.prs
-                .iter()
-                .filter(|pr| matches_query(pr, query))
-                .collect()
+    pub fn pr_status(&self, pr: &PullRequest) -> PrStatus {
+        if pr.is_draft {
+            return PrStatus::Draft;
+        }
+        let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+        let Some(d) = self.details_cache.get(&pr_id) else {
+            return PrStatus::InProgress;
         };
+        let ci_fail = d.ci_status == crate::gh::CiStatus::Fail;
+        let changes = crate::review::has_active_changes(
+            &crate::review::analyze_reviewers(d, &pr.author.login),
+        );
+        if ci_fail || changes {
+            return PrStatus::NeedsWork;
+        }
+        let approved = d.review_decision.as_deref() == Some("APPROVED")
+            && d.ci_status == crate::gh::CiStatus::Pass;
+        if approved {
+            PrStatus::Ready
+        } else {
+            PrStatus::InProgress
+        }
+    }
+
+    pub fn visible_prs<'a>(
+        &'a self,
+        query: &str,
+        sort: &SortState,
+        filter: FilterPreset,
+    ) -> Vec<&'a PullRequest> {
+        let filtered: Vec<&'a PullRequest> = self
+            .prs
+            .iter()
+            .filter(|pr| query.is_empty() || matches_query(pr, query))
+            .filter(|pr| match filter {
+                FilterPreset::All => true,
+                FilterPreset::Ready => self.pr_status(pr) == PrStatus::Ready,
+                FilterPreset::NeedsReview => self.pr_status(pr) == PrStatus::InProgress,
+                FilterPreset::NeedsWork => self.pr_status(pr) == PrStatus::NeedsWork,
+                FilterPreset::Draft => self.pr_status(pr) == PrStatus::Draft,
+            })
+            .collect();
 
         if sort.key == SortKey::Default {
             return filtered;
@@ -151,19 +225,25 @@ impl TabState {
         sorted
     }
 
-    pub fn selected_pr<'a>(&'a self, query: &str, sort: &SortState) -> Option<&'a PullRequest> {
-        self.visible_prs(query, sort).into_iter().nth(self.selected)
+    pub fn selected_pr<'a>(
+        &'a self,
+        query: &str,
+        sort: &SortState,
+        filter: FilterPreset,
+    ) -> Option<&'a PullRequest> {
+        self.visible_prs(query, sort, filter)
+            .into_iter()
+            .nth(self.selected)
     }
 
-    pub fn move_up(&mut self, query: &str) {
+    pub fn move_up(&mut self) {
         if self.selected > 0 {
             self.selected -= 1;
         }
-        let _ = query;
     }
 
-    pub fn move_down(&mut self, query: &str, sort: &SortState) {
-        let count = self.visible_prs(query, sort).len();
+    pub fn move_down(&mut self, query: &str, sort: &SortState, filter: FilterPreset) {
+        let count = self.visible_prs(query, sort, filter).len();
         if count > 0 && self.selected < count - 1 {
             self.selected += 1;
         }
@@ -173,8 +253,8 @@ impl TabState {
         self.selected = 0;
     }
 
-    pub fn go_to_last(&mut self, query: &str, sort: &SortState) {
-        let count = self.visible_prs(query, sort).len();
+    pub fn go_to_last(&mut self, query: &str, sort: &SortState, filter: FilterPreset) {
+        let count = self.visible_prs(query, sort, filter).len();
         if count > 0 {
             self.selected = count - 1;
         }
@@ -213,6 +293,7 @@ pub struct AppState {
     pub search_query: String,
     pub pending_g: bool,
     pub sort: SortState,
+    pub filter: FilterPreset,
     pub show_help: bool,
 }
 
@@ -233,6 +314,7 @@ impl Default for AppState {
             search_query: String::new(),
             pending_g: false,
             sort: SortState::default(),
+            filter: FilterPreset::All,
             show_help: false,
         }
     }
