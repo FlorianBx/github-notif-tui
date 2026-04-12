@@ -3,6 +3,7 @@ mod categories;
 mod events;
 mod gh;
 mod review;
+mod score;
 mod ui;
 
 use app::{AppState, SortDir, SortKey, SortState};
@@ -53,7 +54,12 @@ async fn run(
 
         match event {
             AppEvent::Key(key) => {
-                if state.search_mode {
+                if state.show_help {
+                    match key.code {
+                        KeyCode::Char('?') | KeyCode::Esc => state.show_help = false,
+                        _ => {}
+                    }
+                } else if state.search_mode {
                     handle_search_key(&mut state, key.code, key.modifiers, tx.clone());
                 } else {
                     if events::is_quit(&key) {
@@ -145,6 +151,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             state.search_mode = true;
             state.search_query.clear();
             state.active_tab_state_mut().selected = 0;
+            state.active_tab_state_mut().clear_selection();
             state.pending_g = false;
         }
         KeyCode::Char('r') => {
@@ -153,11 +160,34 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             for tab in &mut state.tabs {
                 tab.details_cache.clear();
                 tab.failed_details.clear();
+                tab.clear_selection();
             }
             spawn_fetch_all(tx);
         }
+        KeyCode::Char('v') => {
+            let idx = state.active_tab_state().selected;
+            state.active_tab_state_mut().toggle_selection(idx);
+            state.active_tab_state_mut().move_down(&query, &sort);
+            state.pending_g = false;
+            spawn_fetch_detail_if_needed(state, tx);
+        }
+        KeyCode::Char('V') => {
+            let count = state.active_tab_state().visible_prs(&query, &sort).len();
+            state.active_tab_state_mut().select_all_visible(count);
+            state.pending_g = false;
+        }
+        KeyCode::Esc => {
+            if state.active_tab_state().has_selection() {
+                state.active_tab_state_mut().clear_selection();
+            }
+            state.pending_g = false;
+        }
         KeyCode::Char('o') | KeyCode::Enter => {
-            open_in_browser(state);
+            if state.active_tab_state().has_selection() {
+                open_selected_in_browser(state);
+            } else {
+                open_in_browser(state);
+            }
             state.pending_g = false;
         }
         KeyCode::Char('s') => {
@@ -168,6 +198,7 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
                 state.sort.key = next;
             }
             state.active_tab_state_mut().selected = 0;
+            state.active_tab_state_mut().clear_selection();
             state.pending_g = false;
         }
         KeyCode::Char('S') => {
@@ -177,6 +208,11 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
                 SortDir::Asc
             };
             state.active_tab_state_mut().selected = 0;
+            state.active_tab_state_mut().clear_selection();
+            state.pending_g = false;
+        }
+        KeyCode::Char('?') => {
+            state.show_help = true;
             state.pending_g = false;
         }
         _ => {
@@ -272,4 +308,23 @@ fn open_in_browser(state: &AppState) {
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;
     });
+}
+
+const MAX_BULK_OPEN: usize = 10;
+
+fn open_selected_in_browser(state: &mut AppState) {
+    let tab = state.active_tab_state();
+    let visible = tab.visible_prs(&state.search_query, &state.sort);
+    let urls: Vec<String> = tab
+        .selected_set
+        .iter()
+        .filter_map(|&idx| visible.get(idx).map(|pr| pr.url.clone()))
+        .take(MAX_BULK_OPEN)
+        .collect();
+    for url in urls {
+        tokio::spawn(async move {
+            let _ = tokio::process::Command::new("open").arg(&url).output().await;
+        });
+    }
+    state.active_tab_state_mut().clear_selection();
 }
