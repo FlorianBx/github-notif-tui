@@ -61,6 +61,7 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
         FilterPreset::NeedsReview,
         FilterPreset::NeedsWork,
         FilterPreset::Draft,
+        FilterPreset::Done,
     ];
     let dot = |p: FilterPreset| -> (&str, ratatui::style::Style) {
         match p {
@@ -69,6 +70,7 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
             FilterPreset::NeedsReview => ("● ", theme::ci_pending()),
             FilterPreset::NeedsWork => ("● ", theme::ci_fail()),
             FilterPreset::Draft => ("○ ", theme::dim()),
+            FilterPreset::Done => ("✓ ", theme::dim()),
         }
     };
     let mut spans: Vec<Span> = vec![Span::styled(" f ", theme::dim())];
@@ -103,8 +105,9 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
     let tab = state.active_tab_state();
     let tab_enum = crate::app::Tab::from(state.active_tab);
 
+    let done = &state.local_state.done;
     let visible_count = tab
-        .visible_prs(&state.search_query, &state.sort, state.filter)
+        .visible_prs(&state.search_query, &state.sort, state.filter, done)
         .len();
     let sel_count = tab.selected_set.len();
     let total = tab.prs.len();
@@ -131,6 +134,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         query: &state.search_query,
         sort: &state.sort,
         filter: state.filter,
+        done_set: done,
     }
     .render(split[0], buf, &mut list_state);
 
@@ -139,6 +143,7 @@ fn render_body(area: Rect, buf: &mut Buffer, state: &AppState) {
         query: &state.search_query,
         sort: &state.sort,
         filter: state.filter,
+        done_set: done,
     }
     .render(split[1], buf);
 }
@@ -181,7 +186,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         )
     } else {
         format!(
-            " q quit  o open  / search  f filter  s sort{}  ? help{}",
+            " q quit  o open  d done  / search  f filter  s sort{}  ? help{}",
             sort_info, refresh_info
         )
     };

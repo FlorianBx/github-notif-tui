@@ -22,6 +22,7 @@ const KEYBINDINGS: &[(&str, &[(&str, &str)])] = &[
         "Actions",
         &[
             ("Enter / o", "Open in browser"),
+            ("d", "Mark done / undone"),
             ("r", "Refresh all tabs"),
             ("q / Ctrl+C", "Quit"),
         ],
@@ -50,7 +51,7 @@ pub struct HelpOverlay;
 
 impl Widget for HelpOverlay {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let popup = centered_rect(area, 56, 24);
+        let popup = centered_rect(area, 56, 25);
         Clear.render(popup, buf);
 
         let block = Block::default()
