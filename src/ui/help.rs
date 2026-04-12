@@ -30,7 +30,7 @@ const KEYBINDINGS: &[(&str, &[(&str, &str)])] = &[
         "Search, Filter & Sort",
         &[
             ("/", "Search (text, @user, repo:name)"),
-            ("f", "Cycle filter (all/ready/review/attention/draft)"),
+            ("f / F", "Cycle filter forward / backward"),
             ("s", "Cycle sort (age/size/reviews/priority)"),
             ("S", "Toggle sort direction"),
         ],

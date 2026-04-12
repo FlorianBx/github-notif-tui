@@ -171,6 +171,12 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             state.active_tab_state_mut().clear_selection();
             state.pending_g = false;
         }
+        KeyCode::Char('F') => {
+            state.filter = state.filter.prev();
+            state.active_tab_state_mut().selected = 0;
+            state.active_tab_state_mut().clear_selection();
+            state.pending_g = false;
+        }
         KeyCode::Char('v') => {
             let idx = state.active_tab_state().selected;
             state.active_tab_state_mut().toggle_selection(idx);

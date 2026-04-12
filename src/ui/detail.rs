@@ -85,21 +85,34 @@ impl Widget for DetailPanel<'_> {
             let reviewers = analyze_reviewers(d, &pr.author.login);
             let active_changes = has_active_changes(&reviewers);
             let has_pending = reviewers.iter().any(|e| e.status == ReviewStatus::Pending);
+            let n_approved = reviewers
+                .iter()
+                .filter(|e| e.status == ReviewStatus::Approved)
+                .count();
+            let fully_approved =
+                d.review_decision.as_deref() == Some("APPROVED") && !has_pending;
 
-            let decision_label = match d.review_decision.as_deref() {
-                Some("APPROVED") if has_pending => {
-                    Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending())
+            let decision_label = if (fully_approved || n_approved >= 2) && !active_changes {
+                Span::styled(format!("{} Approved ({})", icons::CHECK, n_approved), theme::ci_pass())
+            } else if active_changes {
+                Span::styled(format!("{} Changes requested", icons::CROSS), theme::ci_fail())
+            } else {
+                match d.review_decision.as_deref() {
+                    Some("APPROVED") if has_pending => {
+                        Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending())
+                    }
+                    Some("CHANGES_REQUESTED") => {
+                        Span::styled(format!("{} Re-review requested", icons::CLOCK), theme::ci_pending())
+                    }
+                    Some("REVIEW_REQUIRED") if n_approved > 0 => {
+                        Span::styled(format!("{} Partial ({}/2)", icons::CLOCK, n_approved), theme::ci_pending())
+                    }
+                    Some("REVIEW_REQUIRED") => {
+                        Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending())
+                    }
+                    Some(other) => Span::styled(other.to_string(), theme::dim()),
+                    None => Span::styled(icons::DASH, theme::dim()),
                 }
-                Some("APPROVED") => Span::styled(format!("{} Approved", icons::CHECK), theme::ci_pass()),
-                Some("CHANGES_REQUESTED") if !active_changes => {
-                    Span::styled(format!("{} Re-review requested", icons::CLOCK), theme::ci_pending())
-                }
-                Some("CHANGES_REQUESTED") => {
-                    Span::styled(format!("{} Changes requested", icons::CROSS), theme::ci_fail())
-                }
-                Some("REVIEW_REQUIRED") => Span::styled(format!("{} Review required", icons::CLOCK), theme::ci_pending()),
-                Some(other) => Span::styled(other.to_string(), theme::dim()),
-                None => Span::styled(icons::DASH, theme::dim()),
             };
             lines.push(Line::from(vec![
                 Span::styled("Decision:", theme::header()),

@@ -32,6 +32,16 @@ impl FilterPreset {
             FilterPreset::Draft => FilterPreset::All,
         }
     }
+
+    pub fn prev(&self) -> Self {
+        match self {
+            FilterPreset::All => FilterPreset::Draft,
+            FilterPreset::Draft => FilterPreset::NeedsWork,
+            FilterPreset::NeedsWork => FilterPreset::NeedsReview,
+            FilterPreset::NeedsReview => FilterPreset::Ready,
+            FilterPreset::Ready => FilterPreset::All,
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Debug)]
@@ -154,16 +164,22 @@ impl TabState {
         let Some(d) = self.details_cache.get(&pr_id) else {
             return PrStatus::InProgress;
         };
+        let reviewers = crate::review::analyze_reviewers(d, &pr.author.login);
+        let changes = crate::review::has_active_changes(&reviewers);
         let ci_fail = d.ci_status == crate::gh::CiStatus::Fail;
-        let changes = crate::review::has_active_changes(
-            &crate::review::analyze_reviewers(d, &pr.author.login),
-        );
         if ci_fail || changes {
             return PrStatus::NeedsWork;
         }
-        let approved = d.review_decision.as_deref() == Some("APPROVED")
-            && d.ci_status == crate::gh::CiStatus::Pass;
-        if approved {
+        let n_approved = reviewers
+            .iter()
+            .filter(|e| e.status == crate::review::ReviewStatus::Approved)
+            .count();
+        let has_pending = reviewers
+            .iter()
+            .any(|e| e.status == crate::review::ReviewStatus::Pending);
+        let fully_approved =
+            d.review_decision.as_deref() == Some("APPROVED") && !has_pending;
+        if fully_approved || n_approved >= 2 {
             PrStatus::Ready
         } else {
             PrStatus::InProgress
