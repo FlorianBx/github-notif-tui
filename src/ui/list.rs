@@ -1,4 +1,4 @@
-use crate::app::{SortState, TabState};
+use crate::app::{SortKey, SortState, TabState};
 use crate::review::{analyze_reviewers, approved_count, has_active_changes};
 use crate::ui::{icons, theme};
 use chrono::Utc;
@@ -48,6 +48,9 @@ impl StatefulWidget for PrList<'_> {
             .iter()
             .enumerate()
             .map(|(i, pr)| {
+                let is_selected = self.tab.selected_set.contains(&i);
+                let sel_prefix = if is_selected { "▸ " } else { "  " };
+
                 let (age, age_style) = format_age(&pr.created_at);
                 let draft = if pr.is_draft { " [D]" } else { "" };
                 let draft_len = draft.chars().count();
@@ -56,7 +59,7 @@ impl StatefulWidget for PrList<'_> {
                 let age_col_len = age_col.chars().count();
 
                 let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-                let (number_style, badge, badge_style) =
+                let (number_style, badge, badge_style, ci_badge, ci_badge_style) =
                     if let Some(d) = self.tab.details_cache.get(&pr_id) {
                         let reviewers = analyze_reviewers(d, &pr.author.login);
                         let n_approved = approved_count(&reviewers);
@@ -67,27 +70,55 @@ impl StatefulWidget for PrList<'_> {
                         let fully_approved = d.review_decision.as_deref() == Some("APPROVED")
                             && !has_pending;
 
+                        let (ci_b, ci_s) = match d.ci_status {
+                            crate::gh::CiStatus::Pass => (format!("{} ", icons::CHECK), theme::ci_pass()),
+                            crate::gh::CiStatus::Fail => (format!("{} ", icons::CROSS), theme::ci_fail()),
+                            crate::gh::CiStatus::Pending => (format!("{} ", icons::CLOCK), theme::ci_pending()),
+                            crate::gh::CiStatus::None => ("  ".to_string(), theme::dim()),
+                        };
+
                         if active {
                             let n_changes = reviewers.iter()
                                 .filter(|e| e.status == crate::review::ReviewStatus::ChangesRequested)
                                 .count();
-                            (theme::ci_fail(), format!("{}{} ", n_changes, icons::CROSS), theme::ci_fail())
+                            (theme::ci_fail(), format!("{}{} ", n_changes, icons::CROSS), theme::ci_fail(), ci_b, ci_s)
                         } else if fully_approved || n_approved >= 2 {
-                            (theme::ci_pass(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pass())
+                            (theme::ci_pass(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pass(), ci_b, ci_s)
                         } else if n_approved > 0 {
-                            (theme::ci_pending(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pending())
+                            (theme::ci_pending(), format!("{}{} ", n_approved, icons::CHECK), theme::ci_pending(), ci_b, ci_s)
                         } else {
-                            (theme::dim(), "    ".to_string(), theme::dim())
+                            (theme::dim(), "    ".to_string(), theme::dim(), ci_b, ci_s)
                         }
                     } else {
-                        (theme::dim(), "    ".to_string(), theme::dim())
+                        (theme::dim(), "    ".to_string(), theme::dim(), "  ".to_string(), theme::dim())
                     };
 
+                let score_badge = if self.sort.key == SortKey::Priority {
+                    let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                    let details = self.tab.details_cache.get(&pr_id);
+                    let s = crate::score::compute_priority(pr, details);
+                    let style = if s > 70 {
+                        theme::ci_pass()
+                    } else if s > 40 {
+                        theme::ci_pending()
+                    } else {
+                        theme::ci_fail()
+                    };
+                    (format!("[{:>2}] ", s), style)
+                } else {
+                    (String::new(), theme::dim())
+                };
+
                 let number_str = format!("#{:<5}", pr.number);
-                let number_len = number_str.chars().count() + badge.chars().count() + 1;
+                let prefix_len = sel_prefix.chars().count()
+                    + score_badge.0.chars().count()
+                    + number_str.chars().count()
+                    + 1
+                    + badge.chars().count()
+                    + ci_badge.chars().count();
 
                 let title_width = inner_width
-                    .saturating_sub(number_len)
+                    .saturating_sub(prefix_len)
                     .saturating_sub(draft_len)
                     .saturating_sub(age_col_len);
 
@@ -101,10 +132,14 @@ impl StatefulWidget for PrList<'_> {
                     theme::normal_row()
                 };
 
+                let sel_style = if is_selected { theme::ci_pass() } else { theme::dim() };
                 let spans = vec![
+                    Span::styled(sel_prefix, sel_style),
+                    Span::styled(score_badge.0, score_badge.1),
                     Span::styled(number_str, number_style),
                     Span::raw(" "),
                     Span::styled(badge, badge_style),
+                    Span::styled(ci_badge, ci_badge_style),
                     Span::styled(title_padded, row_style),
                     Span::styled(draft.to_string(), theme::dim()),
                     Span::styled(age_col, age_style),

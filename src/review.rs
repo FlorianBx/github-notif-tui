@@ -85,6 +85,8 @@ mod tests {
             deletions: 0,
             review_decision: None,
             requested_reviewers: requested.into_iter().map(String::from).collect(),
+            checks: vec![],
+            ci_status: crate::gh::CiStatus::None,
         }
     }
 

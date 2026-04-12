@@ -76,6 +76,9 @@ impl Widget for DetailPanel<'_> {
                 Span::styled(format!("-{}", d.deletions), theme::deletions()),
             ]));
 
+            let ci_line = render_ci_line(d);
+            lines.push(ci_line);
+
             lines.push(Line::raw(""));
 
             let reviewers = analyze_reviewers(d, &pr.author.login);
@@ -106,6 +109,23 @@ impl Widget for DetailPanel<'_> {
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Reviewers:", theme::header())));
             render_reviewers_lines(&reviewers, &mut lines);
+
+            render_failed_checks(d, &mut lines);
+
+            let score = crate::score::compute_priority(pr, Some(d));
+            let score_style = if score > 70 {
+                theme::ci_pass()
+            } else if score > 40 {
+                theme::ci_pending()
+            } else {
+                theme::ci_fail()
+            };
+            lines.push(Line::raw(""));
+            lines.push(Line::from(vec![
+                Span::styled("Priority:", theme::header()),
+                Span::raw(" "),
+                Span::styled(format!("{}/100", score), score_style),
+            ]));
         } else if self.tab.loading_detail {
             lines.push(Line::raw(""));
             lines.push(Line::from(Span::styled("Loading…", theme::dim())));
@@ -119,6 +139,50 @@ impl Widget for DetailPanel<'_> {
             .block(block)
             .wrap(ratatui::widgets::Wrap { trim: false })
             .render(area, buf);
+    }
+}
+
+fn render_ci_line<'a>(d: &crate::gh::PrDetails) -> Line<'a> {
+    use crate::gh::CiStatus;
+    if d.checks.is_empty() {
+        return Line::from(vec![
+            Span::styled("CI:      ", theme::header()),
+            Span::styled(icons::DASH, theme::dim()),
+        ]);
+    }
+    let passed = d.checks.iter().filter(|c| {
+        matches!(c.conclusion.to_uppercase().as_str(), "SUCCESS" | "NEUTRAL" | "SKIPPED")
+    }).count();
+    let failed = d.checks.iter().filter(|c| {
+        matches!(c.conclusion.to_uppercase().as_str(), "FAILURE" | "CANCELLED")
+    }).count();
+    let total = d.checks.len();
+    let (icon, style, text) = match d.ci_status {
+        CiStatus::Pass => (icons::CHECK, theme::ci_pass(), format!("{}/{} passed", passed, total)),
+        CiStatus::Fail => (icons::CROSS, theme::ci_fail(), format!("{} failed, {} passed", failed, passed)),
+        CiStatus::Pending => (icons::CLOCK, theme::ci_pending(), format!("{}/{} passed, rest pending", passed, total)),
+        CiStatus::None => (icons::DASH, theme::dim(), "none".to_string()),
+    };
+    Line::from(vec![
+        Span::styled("CI:      ", theme::header()),
+        Span::styled(format!("{} {}", icon, text), style),
+    ])
+}
+
+fn render_failed_checks(d: &crate::gh::PrDetails, lines: &mut Vec<Line>) {
+    let failed: Vec<&crate::gh::CheckRun> = d.checks.iter().filter(|c| {
+        matches!(c.conclusion.to_uppercase().as_str(), "FAILURE" | "CANCELLED")
+    }).collect();
+    if failed.is_empty() {
+        return;
+    }
+    lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled("Failed checks:", theme::header())));
+    for check in failed {
+        lines.push(Line::from(vec![
+            Span::styled(format!("  {} ", icons::CROSS), theme::ci_fail()),
+            Span::styled(check.name.clone(), theme::ci_fail()),
+        ]));
     }
 }
 

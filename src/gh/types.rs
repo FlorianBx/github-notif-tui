@@ -38,6 +38,27 @@ pub struct Review {
     pub submitted_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum CiStatus {
+    Pass,
+    Fail,
+    Pending,
+    None,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CheckRun {
+    pub name: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub status: String,
+    #[serde(default)]
+    pub conclusion: String,
+    #[serde(rename = "detailsUrl", default)]
+    #[allow(dead_code)]
+    pub details_url: String,
+}
+
 #[derive(Debug, Clone)]
 pub struct PrDetails {
     pub reviews: Vec<Review>,
@@ -45,6 +66,8 @@ pub struct PrDetails {
     pub deletions: u32,
     pub review_decision: Option<String>,
     pub requested_reviewers: Vec<String>,
+    pub checks: Vec<CheckRun>,
+    pub ci_status: CiStatus,
 }
 
 pub type PrId = (String, u64);

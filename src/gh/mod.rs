@@ -44,12 +44,36 @@ pub async fn search_authored_prs() -> Result<Vec<PullRequest>> {
     Ok(serde_json::from_str(&json)?)
 }
 
+fn compute_ci_status(checks: &[CheckRun]) -> CiStatus {
+    if checks.is_empty() {
+        return CiStatus::None;
+    }
+    let has_failure = checks.iter().any(|c| {
+        c.conclusion.eq_ignore_ascii_case("FAILURE")
+            || c.conclusion.eq_ignore_ascii_case("CANCELLED")
+    });
+    if has_failure {
+        return CiStatus::Fail;
+    }
+    let all_done = checks.iter().all(|c| {
+        matches!(
+            c.conclusion.to_uppercase().as_str(),
+            "SUCCESS" | "NEUTRAL" | "SKIPPED"
+        )
+    });
+    if all_done {
+        CiStatus::Pass
+    } else {
+        CiStatus::Pending
+    }
+}
+
 pub async fn fetch_pr_details(repo: &str, number: u64) -> Result<PrDetails> {
     let number_str = number.to_string();
     let json = run_gh(&[
         "pr", "view", &number_str,
         "--repo", repo,
-        "--json", "additions,deletions,reviewDecision,reviews,reviewRequests",
+        "--json", "additions,deletions,reviewDecision,reviews,reviewRequests,statusCheckRollup",
     ]).await?;
 
     let data: serde_json::Value = serde_json::from_str(&json)?;
@@ -68,6 +92,9 @@ pub async fn fetch_pr_details(repo: &str, number: u64) -> Result<PrDetails> {
                 .collect()
         })
         .unwrap_or_default();
+    let checks: Vec<CheckRun> =
+        serde_json::from_value(data["statusCheckRollup"].clone()).unwrap_or_default();
+    let ci_status = compute_ci_status(&checks);
 
-    Ok(PrDetails { reviews, additions, deletions, review_decision, requested_reviewers })
+    Ok(PrDetails { reviews, additions, deletions, review_decision, requested_reviewers, checks, ci_status })
 }
