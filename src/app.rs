@@ -203,7 +203,7 @@ impl TabState {
         local: &LocalState,
     ) -> Vec<&'a PullRequest> {
         let now = Utc::now();
-        let filtered: Vec<&'a PullRequest> = self
+        let mut filtered: Vec<&'a PullRequest> = self
             .prs
             .iter()
             .filter(|pr| query.is_empty() || matches_query(pr, query))
@@ -227,42 +227,42 @@ impl TabState {
             })
             .collect();
 
-        if sort.key == SortKey::Default {
-            return filtered;
+        if sort.key != SortKey::Default {
+            filtered.sort_by_key(|pr| {
+                let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
+                match sort.key {
+                    SortKey::Default => 0i64,
+                    SortKey::Age => pr.created_at.timestamp(),
+                    SortKey::Size => {
+                        self.details_cache
+                            .get(&pr_id)
+                            .map(|d| (d.additions + d.deletions) as i64)
+                            .unwrap_or(0)
+                    }
+                    SortKey::Reviews => {
+                        self.details_cache
+                            .get(&pr_id)
+                            .map(|d| d.reviews.len() as i64)
+                            .unwrap_or(0)
+                    }
+                    SortKey::Priority => {
+                        let details = self.details_cache.get(&pr_id);
+                        crate::score::compute_priority(pr, details) as i64
+                    }
+                }
+            });
+            if sort.dir == SortDir::Desc {
+                filtered.reverse();
+            }
         }
 
-        let mut sorted = filtered;
-        sorted.sort_by_key(|pr| {
-            let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-            match sort.key {
-                SortKey::Default => 0i64,
-                SortKey::Age => pr.created_at.timestamp(),
-                SortKey::Size => {
-                    self.details_cache
-                        .get(&pr_id)
-                        .map(|d| (d.additions + d.deletions) as i64)
-                        .unwrap_or(0)
-                }
-                SortKey::Reviews => {
-                    self.details_cache
-                        .get(&pr_id)
-                        .map(|d| d.reviews.len() as i64)
-                        .unwrap_or(0)
-                }
-                SortKey::Priority => {
-                    let details = self.details_cache.get(&pr_id);
-                    crate::score::compute_priority(pr, details) as i64
-                }
-            }
-        });
-
-        if sort.dir == SortDir::Desc {
-            sorted.reverse();
+        if local.pinned.is_empty() {
+            return filtered;
         }
 
         let mut pinned_items: Vec<&PullRequest> = Vec::new();
         let mut rest: Vec<&PullRequest> = Vec::new();
-        for pr in sorted {
+        for pr in filtered {
             let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
             if local.pinned.contains(&pr_id) {
                 pinned_items.push(pr);
