@@ -1,6 +1,6 @@
 use crate::gh::{PrDetails, PrId, PullRequest};
 use chrono::{DateTime, Utc};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Default, Clone, PartialEq, Debug)]
 pub enum SortKey {
@@ -9,6 +9,7 @@ pub enum SortKey {
     Age,
     Size,
     Reviews,
+    Priority,
 }
 
 #[derive(Default, Clone, PartialEq, Debug)]
@@ -31,6 +32,7 @@ impl SortKey {
             SortKey::Age => "age",
             SortKey::Size => "size",
             SortKey::Reviews => "reviews",
+            SortKey::Priority => "priority",
         }
     }
 
@@ -39,7 +41,8 @@ impl SortKey {
             SortKey::Default => SortKey::Age,
             SortKey::Age => SortKey::Size,
             SortKey::Size => SortKey::Reviews,
-            SortKey::Reviews => SortKey::Default,
+            SortKey::Reviews => SortKey::Priority,
+            SortKey::Priority => SortKey::Default,
         }
     }
 }
@@ -82,9 +85,23 @@ pub struct TabState {
     pub prs: Vec<PullRequest>,
     pub selected: usize,
     pub details_cache: HashMap<PrId, PrDetails>,
-    pub failed_details: std::collections::HashSet<PrId>,
+    pub failed_details: HashSet<PrId>,
     pub loading: bool,
     pub loading_detail: bool,
+    pub selected_set: HashSet<usize>,
+}
+
+fn matches_query(pr: &PullRequest, query: &str) -> bool {
+    let q = query.to_lowercase();
+    if let Some(user) = q.strip_prefix('@') {
+        return pr.author.login.to_lowercase().contains(user);
+    }
+    if let Some(repo) = q.strip_prefix("repo:") {
+        return pr.repository.name_with_owner.to_lowercase().contains(repo);
+    }
+    pr.title.to_lowercase().contains(&q)
+        || pr.author.login.to_lowercase().contains(&q)
+        || pr.repository.name_with_owner.to_lowercase().contains(&q)
 }
 
 impl TabState {
@@ -92,10 +109,9 @@ impl TabState {
         let filtered: Vec<&'a PullRequest> = if query.is_empty() {
             self.prs.iter().collect()
         } else {
-            let q = query.to_lowercase();
             self.prs
                 .iter()
-                .filter(|pr| pr.title.to_lowercase().contains(&q))
+                .filter(|pr| matches_query(pr, query))
                 .collect()
         };
 
@@ -120,6 +136,10 @@ impl TabState {
                         .get(&pr_id)
                         .map(|d| d.reviews.len() as i64)
                         .unwrap_or(0)
+                }
+                SortKey::Priority => {
+                    let details = self.details_cache.get(&pr_id);
+                    crate::score::compute_priority(pr, details) as i64
                 }
             }
         });
@@ -159,6 +179,28 @@ impl TabState {
             self.selected = count - 1;
         }
     }
+
+    pub fn toggle_selection(&mut self, idx: usize) {
+        if !self.selected_set.remove(&idx) {
+            self.selected_set.insert(idx);
+        }
+    }
+
+    pub fn select_all_visible(&mut self, count: usize) {
+        if self.selected_set.len() == count {
+            self.selected_set.clear();
+        } else {
+            self.selected_set = (0..count).collect();
+        }
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selected_set.clear();
+    }
+
+    pub fn has_selection(&self) -> bool {
+        !self.selected_set.is_empty()
+    }
 }
 
 #[derive(Debug)]
@@ -171,6 +213,7 @@ pub struct AppState {
     pub search_query: String,
     pub pending_g: bool,
     pub sort: SortState,
+    pub show_help: bool,
 }
 
 impl Default for AppState {
@@ -190,6 +233,7 @@ impl Default for AppState {
             search_query: String::new(),
             pending_g: false,
             sort: SortState::default(),
+            show_help: false,
         }
     }
 }
@@ -227,5 +271,6 @@ impl AppState {
         self.search_mode = false;
         self.search_query.clear();
         self.active_tab_state_mut().selected = 0;
+        self.active_tab_state_mut().clear_selection();
     }
 }
