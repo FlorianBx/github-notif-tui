@@ -21,12 +21,6 @@ pub fn normal_row() -> Style {
     Style::default()
 }
 
-pub fn unread_row() -> Style {
-    Style::default()
-        .fg(Color::White)
-        .add_modifier(Modifier::BOLD)
-}
-
 pub fn header() -> Style {
     Style::default()
         .fg(Color::Cyan)

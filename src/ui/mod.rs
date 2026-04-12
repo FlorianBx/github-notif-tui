@@ -67,7 +67,6 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
         FilterPreset::Draft,
         FilterPreset::Done,
         FilterPreset::Snoozed,
-        FilterPreset::Unread,
     ];
     let dot = |p: FilterPreset| -> (&str, ratatui::style::Style) {
         match p {
@@ -78,7 +77,6 @@ fn render_filter_bar(area: Rect, buf: &mut Buffer, state: &AppState) {
             FilterPreset::Draft => ("○ ", theme::dim()),
             FilterPreset::Done => ("✓ ", theme::dim()),
             FilterPreset::Snoozed => ("◷ ", theme::ci_pending()),
-            FilterPreset::Unread => ("★ ", theme::unread_row()),
         }
     };
     let mut spans: Vec<Span> = vec![Span::styled(" f ", theme::dim())];
@@ -215,7 +213,7 @@ fn render_footer(area: Rect, buf: &mut Buffer, state: &AppState) {
         )
     } else {
         format!(
-            " q quit  o open  d done  z snooze  / search  f filter  s sort{}  ? help{}",
+            " q quit  o open  / search  f filter  s sort{}  ? help{}",
             sort_info, refresh_info
         )
     };

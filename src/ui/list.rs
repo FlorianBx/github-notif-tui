@@ -117,13 +117,10 @@ impl StatefulWidget for PrList<'_> {
 
                 let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
                 let is_pinned = self.local.pinned.contains(&pr_id);
-                let is_unread = !self.local.read.contains(&pr_id);
                 let row_style = if is_muted_filter {
                     theme::dim()
                 } else if i == self.tab.selected {
                     theme::selected_row()
-                } else if is_unread {
-                    theme::unread_row()
                 } else {
                     theme::normal_row()
                 };

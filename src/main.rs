@@ -177,10 +177,6 @@ fn handle_normal_key(state: &mut AppState, code: KeyCode, tx: mpsc::UnboundedSen
             state.snooze_mode = true;
             state.pending_g = false;
         }
-        KeyCode::Char('u') => {
-            toggle_read(state);
-            state.pending_g = false;
-        }
         KeyCode::Char('p') => {
             toggle_pin(state);
             state.pending_g = false;
@@ -401,22 +397,6 @@ fn toggle_pin(state: &mut AppState) {
     state::save_state(&state.local_state);
 }
 
-fn toggle_read(state: &mut AppState) {
-    let query = state.search_query.clone();
-    let sort = state.sort.clone();
-    let filter = state.filter;
-    let local = state.local_state.clone();
-    let tab = state.active_tab_state();
-    let Some(pr) = tab.selected_pr(&query, &sort, filter, &local) else {
-        return;
-    };
-    let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-    if !state.local_state.read.remove(&pr_id) {
-        state.local_state.read.insert(pr_id);
-    }
-    state::save_state(&state.local_state);
-}
-
 fn toggle_done(state: &mut AppState) {
     let query = state.search_query.clone();
     let sort = state.sort.clone();
@@ -471,14 +451,10 @@ fn spawn_fetch_detail_if_needed(state: &AppState, tx: mpsc::UnboundedSender<AppE
     });
 }
 
-fn open_in_browser(state: &mut AppState) {
-    let query = &state.search_query.clone();
-    let local = state.local_state.clone();
-    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort, state.filter, &local) else { return };
+fn open_in_browser(state: &AppState) {
+    let query = &state.search_query;
+    let Some(pr) = state.active_tab_state().selected_pr(query, &state.sort, state.filter, &state.local_state) else { return };
     let url = pr.url.clone();
-    let pr_id = (pr.repository.name_with_owner.clone(), pr.number);
-    state.local_state.read.insert(pr_id);
-    state::save_state(&state.local_state);
     tokio::spawn(async move {
         let _ = tokio::process::Command::new("open").arg(&url).output().await;
     });
